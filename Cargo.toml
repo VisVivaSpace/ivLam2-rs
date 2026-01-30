@@ -1,0 +1,20 @@
+[package]
+name = "lambert_solver"
+version = "0.1.0"
+edition = "2021"
+authors = ["Based on ivLam2 by Ryan P. Russell <ryan.russell@utexas.edu>"]
+description = "A Rust implementation of the vercosine Lambert solver with first and second-order sensitivities"
+license = "GPL-3.0"
+repository = "https://doi.org/10.5281/zenodo.3479923"
+keywords = ["astrodynamics", "orbital-mechanics", "lambert", "trajectory"]
+categories = ["science", "aerospace"]
+
+[dependencies]
+
+[dev-dependencies]
+approx = "0.5"
+
+[features]
+default = []
+# Enable second-order sensitivities (Hessians)
+sensitivities = []
