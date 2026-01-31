@@ -194,6 +194,8 @@ GPL-3.0, following the original ivLam2 code.
 
 ## Acknowledgments
 
-This implementation is based on the ivLam2 FORTRAN code by Ryan P. Russell at 
-The University of Texas at Austin. The original code is available at:
-https://doi.org/10.5281/zenodo.3479923
+This implementation is based on the ivLam2 FORTRAN code by Ryan P. Russell at
+The University of Texas at Austin.
+
+- Official page: https://sites.utexas.edu/russell/publications/code/lambert/
+- Code archive: https://doi.org/10.5281/zenodo.3479923

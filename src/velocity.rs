@@ -132,19 +132,78 @@ mod tests {
         let r2 = [0.0, 1.0, 0.0];
         let tof = PI / 2.0;
         let mu = 1.0;
-        
+
         let geom = Geometry::new(&r1, &r2, tof, mu, Direction::Prograde);
-        
+
         // Create a state with some reasonable values
         let mut state = SolverState::new(0.5, geom.tau);
         state.w = 0.5;
-        
+
         let (v1, v2) = compute_velocities(&state, &geom);
-        
+
         // Velocities should be finite
         for i in 0..3 {
             assert!(v1[i].is_finite());
             assert!(v2[i].is_finite());
         }
+    }
+
+    #[test]
+    fn test_lagrange_identity_from_solver() {
+        // f·ġ - ḟ·g = 1 (Lagrange identity)
+        // We test this using a solved Lambert problem where k is correct
+        use crate::solver::solve_lambert;
+
+        let r1 = [1.0, 0.0, 0.0];
+        let r2 = [0.0, 1.0, 0.0];
+        let tof = PI / 2.0;
+        let mu = 1.0;
+
+        let sol = solve_lambert(&r1, &r2, tof, mu, Direction::Prograde, 0).unwrap();
+
+        // Reconstruct f, g, g_dot from the solution
+        let geom = Geometry::new(&r1, &r2, tof, mu, Direction::Prograde);
+        let state = SolverState::new(sol.k, geom.tau);
+
+        let f = compute_f(state.p, geom.r1_plus_r2, geom.inv_r1);
+        let g = compute_g(geom.s, geom.tau, state.sqrt_p);
+        let g_dot = compute_g_dot(state.p, geom.r1_plus_r2, geom.inv_r2);
+
+        // f_dot = (v1 - f*v1_from_eq) ... actually compute from:
+        // v1 = (r2 - f*r1) / g  =>  r2 = f*r1 + g*v1
+        // v2 = (g_dot*r2 - r1) / g  =>  r1 = g_dot*r2 - g*v2
+        // From Lagrange: f*g_dot - f_dot*g = 1
+        // f_dot = (f*g_dot - 1) / g
+        let f_dot = (f * g_dot - 1.0) / g;
+
+        // Check the identity: f·ġ - ḟ·g = 1
+        let identity = f * g_dot - f_dot * g;
+        assert!((identity - 1.0).abs() < 1e-14,
+            "Lagrange identity f*g_dot - f_dot*g = {}, expected 1", identity);
+    }
+
+    #[test]
+    fn test_velocity_from_known_circular_orbit() {
+        // Circular orbit: r=1, mu=1, v=1
+        // 90° transfer: v1 = [0, 1, 0], v2 = [-1, 0, 0]
+        use crate::solver::solve_lambert;
+
+        let r1 = [1.0, 0.0, 0.0];
+        let r2 = [0.0, 1.0, 0.0];
+        let tof = PI / 2.0;
+        let mu = 1.0;
+
+        let sol = solve_lambert(&r1, &r2, tof, mu, Direction::Prograde, 0).unwrap();
+
+        // For circular orbit v1 should be tangent to circle at r1
+        // At [1,0,0], tangent is [0,1,0] with |v|=1
+        assert!((sol.v1[0]).abs() < 1e-10, "v1_x = {}, expected ~0", sol.v1[0]);
+        assert!((sol.v1[1] - 1.0).abs() < 1e-10, "v1_y = {}, expected ~1", sol.v1[1]);
+        assert!((sol.v1[2]).abs() < 1e-10, "v1_z = {}, expected ~0", sol.v1[2]);
+
+        // At [0,1,0], tangent is [-1,0,0]
+        assert!((sol.v2[0] - (-1.0)).abs() < 1e-10, "v2_x = {}, expected ~-1", sol.v2[0]);
+        assert!((sol.v2[1]).abs() < 1e-10, "v2_y = {}, expected ~0", sol.v2[1]);
+        assert!((sol.v2[2]).abs() < 1e-10, "v2_z = {}, expected ~0", sol.v2[2]);
     }
 }

@@ -130,9 +130,6 @@ pub fn solve_lambert(
     let n_is_zero = n_rev == 0;
     let two_pi_n = TWO_PI * n_abs as f64;
     
-    // Get initial guess
-    let k_initial = compute_initial_guess(&geom, n_is_zero, n_abs);
-    
     // Determine k bounds
     let (k_left, k_right) = if n_is_zero {
         let k_right = if geom.tau > 0.0 {
@@ -144,7 +141,11 @@ pub fn solve_lambert(
     } else {
         (K_RANGE_LEFT_MULTI_REV, K_RANGE_RIGHT_MULTI_REV)
     };
-    
+
+    // Get initial guess and clamp to valid range
+    let k_initial = compute_initial_guess(&geom, n_is_zero, n_abs);
+    let k_initial = k_initial.clamp(k_left + K_MARGIN, k_right - K_MARGIN);
+
     // Create initial solver state
     let mut state = SolverState::new(k_initial, geom.tau);
     
@@ -401,8 +402,9 @@ mod tests {
         match result {
             Ok(sol) => {
                 // Velocity magnitude should be close to circular (v = 1)
+                // Iterative solver with 1e-14 convergence criterion
                 let v1_mag = (sol.v1[0].powi(2) + sol.v1[1].powi(2) + sol.v1[2].powi(2)).sqrt();
-                assert!((v1_mag - 1.0).abs() < 0.1, "v1_mag = {}", v1_mag);
+                assert!((v1_mag - 1.0).abs() < 1e-10, "v1_mag = {}", v1_mag);
                 
                 // Should converge in few iterations
                 assert!(sol.iterations < 10, "iterations = {}", sol.iterations);
@@ -494,11 +496,112 @@ mod tests {
         let r1 = [1.0, 0.0, 0.0];
         let r2 = [0.0, 1.0, 0.0];
         let mu = 1.0;
-        
+
         let result = solve_lambert(&r1, &r2, -1.0, mu, Direction::Prograde, 0);
         assert!(matches!(result, Err(LambertError::InvalidTimeOfFlight)));
-        
+
         let result = solve_lambert(&r1, &r2, 0.0, mu, Direction::Prograde, 0);
         assert!(matches!(result, Err(LambertError::InvalidTimeOfFlight)));
+    }
+
+    #[test]
+    fn test_solve_lambert_transfer_angle_sweep() {
+        // Sweep through various transfer angles (prograde, zero-rev)
+        // All with r1=r2=1, mu=1 (circular orbit reference)
+        let mu = 1.0;
+        let r1 = [1.0, 0.0, 0.0];
+
+        for angle_deg in [10.0_f64, 30.0, 45.0, 60.0, 90.0, 120.0, 135.0, 150.0, 170.0] {
+            let angle = angle_deg.to_radians();
+            let r2 = [angle.cos(), angle.sin(), 0.0];
+            // Use circular orbit TOF for this angle: t = angle (since period = 2*pi)
+            let tof = angle;
+
+            let result = solve_lambert(&r1, &r2, tof, mu, Direction::Prograde, 0);
+            match result {
+                Ok(sol) => {
+                    // Iterative solver convergence (1e-10 tolerance)
+                    assert!(sol.residual < 1e-10,
+                        "angle={}°: residual {} too large", angle_deg, sol.residual);
+
+                    // For circular orbit, v_mag should be ~1
+                    let v1_mag = (sol.v1[0].powi(2) + sol.v1[1].powi(2) + sol.v1[2].powi(2)).sqrt();
+                    assert!((v1_mag - 1.0).abs() < 1e-6,
+                        "angle={}°: v1_mag = {}, expected ~1", angle_deg, v1_mag);
+                }
+                Err(e) => panic!("angle={}°: solver failed: {:?}", angle_deg, e),
+            }
+        }
+    }
+
+    #[test]
+    fn test_solve_lambert_energy_conservation() {
+        // Energy at departure should equal energy at arrival (same orbit)
+        // E = v^2/2 - mu/r
+        let r1 = [1.0, 0.0, 0.0];
+        let r2 = [0.0, 1.0, 0.0];
+        let mu = 1.0;
+        let tof = PI / 2.0;
+
+        let sol = solve_lambert(&r1, &r2, tof, mu, Direction::Prograde, 0).unwrap();
+
+        let r1_mag = 1.0;
+        let r2_mag = 1.0;
+        let v1_mag_sq = sol.v1[0].powi(2) + sol.v1[1].powi(2) + sol.v1[2].powi(2);
+        let v2_mag_sq = sol.v2[0].powi(2) + sol.v2[1].powi(2) + sol.v2[2].powi(2);
+
+        let e1 = v1_mag_sq / 2.0 - mu / r1_mag;
+        let e2 = v2_mag_sq / 2.0 - mu / r2_mag;
+
+        // Energy must be conserved (both on same Keplerian arc)
+        // Iterative solver tolerance
+        assert!((e1 - e2).abs() < 1e-10,
+            "Energy not conserved: E1={}, E2={}", e1, e2);
+    }
+
+    #[test]
+    fn test_solve_lambert_3d_transfer() {
+        // Out-of-plane transfer to verify 3D works
+        let r1 = [1.0, 0.0, 0.0];
+        let r2 = [0.0, 0.8, 0.6]; // |r2| = 1.0, in y-z plane
+        let mu = 1.0;
+        let tof = PI / 2.0;
+
+        let sol = solve_lambert(&r1, &r2, tof, mu, Direction::Prograde, 0).unwrap();
+
+        assert!(sol.residual < 1e-10);
+
+        // v1 should have a non-zero z-component for out-of-plane transfer
+        assert!(sol.v1[2].abs() > 1e-6, "Expected non-zero v1_z for 3D transfer");
+    }
+
+    #[test]
+    fn test_solve_lambert_different_radii() {
+        // Hohmann-like: r1 = 1, r2 = 2, 180° transfer
+        // For Hohmann: a = (r1+r2)/2 = 1.5, period = 2*pi*sqrt(a^3/mu)
+        // TOF = half period = pi*sqrt(1.5^3) = pi*sqrt(3.375)
+        let r1 = [1.0, 0.0, 0.0];
+        let r2 = [-2.0, 0.0, 0.0]; // 180° away, r2=2
+        let mu = 1.0;
+        let a = 1.5_f64;
+        let tof = PI * (a * a * a).sqrt(); // half-period of transfer ellipse
+
+        let result = solve_lambert(&r1, &r2, tof, mu, Direction::Prograde, 0);
+
+        // Near-180° may give warning or singularity
+        match result {
+            Ok(sol) => {
+                // For Hohmann transfer: v1 = sqrt(mu*(2/r1 - 1/a))
+                let v1_hohmann = (mu * (2.0 / 1.0 - 1.0 / a)).sqrt();
+                let v1_mag = (sol.v1[0].powi(2) + sol.v1[1].powi(2) + sol.v1[2].powi(2)).sqrt();
+                // This is near 180° so may have degraded accuracy
+                assert!((v1_mag - v1_hohmann).abs() < 0.01,
+                    "v1_mag = {}, expected Hohmann v1 = {}", v1_mag, v1_hohmann);
+            }
+            Err(LambertError::HalfRevolutionSingularity) => {
+                // Acceptable for exact 180°
+            }
+            Err(e) => panic!("Unexpected error: {:?}", e),
+        }
     }
 }

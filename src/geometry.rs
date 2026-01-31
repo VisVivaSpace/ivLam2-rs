@@ -242,14 +242,126 @@ mod tests {
         let r2 = [0.0, 1.0, 0.0];
         let tof = PI / 2.0;
         let mu = 1.0;
-        
+
         let geom = Geometry::new(&r1, &r2, tof, mu, Direction::Retrograde);
-        
+
         // tau should be negative for retrograde
         assert!(geom.tau < 0.0);
-        
+
         // |tau| should be same as prograde
         let geom_pro = Geometry::new(&r1, &r2, tof, mu, Direction::Prograde);
         assert!((geom.abs_tau - geom_pro.abs_tau).abs() < 1e-15);
+    }
+
+    #[test]
+    fn test_geometry_45_degree() {
+        // 45-degree transfer: r2 at 45° from r1
+        let r1 = [1.0, 0.0, 0.0];
+        let angle = PI / 4.0;
+        let r2 = [angle.cos(), angle.sin(), 0.0];
+        let tof = 1.0;
+        let mu = 1.0;
+
+        let geom = Geometry::new(&r1, &r2, tof, mu, Direction::Prograde);
+
+        // cos(45°) = sqrt(2)/2
+        assert!((geom.cos_theta - std::f64::consts::FRAC_1_SQRT_2).abs() < 1e-14,
+            "cos_theta = {}", geom.cos_theta);
+
+        // tau = sqrt(r1*r2*(1+cos_theta)) / (r1+r2)
+        // r1 = r2 = 1, so tau = sqrt(1+cos(pi/4)) / 2
+        let expected_tau = (1.0 + std::f64::consts::FRAC_1_SQRT_2).sqrt() / 2.0;
+        assert!((geom.tau - expected_tau).abs() < 1e-14,
+            "tau = {}, expected {}", geom.tau, expected_tau);
+    }
+
+    #[test]
+    fn test_geometry_near_pi() {
+        // Near-180° transfer (170°)
+        let r1 = [1.0, 0.0, 0.0];
+        let angle = 170.0_f64.to_radians();
+        let r2 = [angle.cos(), angle.sin(), 0.0];
+        let tof = 1.0;
+        let mu = 1.0;
+
+        let geom = Geometry::new(&r1, &r2, tof, mu, Direction::Prograde);
+
+        // cos(170°) should be close to -1
+        let expected_cos = angle.cos();
+        assert!((geom.cos_theta - expected_cos).abs() < 1e-14);
+
+        // tau should be small but positive (prograde)
+        assert!(geom.tau > 0.0);
+        assert!(geom.tau < 0.1, "tau = {} should be small for near-pi", geom.tau);
+    }
+
+    #[test]
+    fn test_geometry_near_pi_179() {
+        // Near-180° transfer (179°)
+        let r1 = [1.0, 0.0, 0.0];
+        let angle = 179.0_f64.to_radians();
+        let r2 = [angle.cos(), angle.sin(), 0.0];
+        let tof = 1.0;
+        let mu = 1.0;
+
+        let geom = Geometry::new(&r1, &r2, tof, mu, Direction::Prograde);
+
+        // Should still be Normal or NearHalfRev (not exact)
+        assert_ne!(geom.n_pi_rev_info, NpiRevInfo::ExactHalfRev);
+        assert!(geom.tau > 0.0);
+    }
+
+    #[test]
+    fn test_geometry_different_magnitudes() {
+        // r1 = 1 DU, r2 = 2 DU (Hohmann-like)
+        let r1 = [1.0, 0.0, 0.0];
+        let r2 = [0.0, 2.0, 0.0];
+        let tof = 1.0;
+        let mu = 1.0;
+
+        let geom = Geometry::new(&r1, &r2, tof, mu, Direction::Prograde);
+
+        assert!((geom.r1 - 1.0).abs() < 1e-15);
+        assert!((geom.r2 - 2.0).abs() < 1e-15);
+        assert!((geom.r1_plus_r2 - 3.0).abs() < 1e-15);
+
+        // S = sqrt((r1+r2)^3 / mu) = sqrt(27) = 3*sqrt(3)
+        let expected_s = (27.0_f64).sqrt();
+        assert!((geom.s - expected_s).abs() < 1e-14,
+            "S = {}, expected {}", geom.s, expected_s);
+    }
+
+    #[test]
+    fn test_geometry_tau_consistency() {
+        // Verify that tau^2 and tau^3 are consistent with tau
+        let r1 = [1.0, 0.0, 0.0];
+        let r2 = [0.5, 0.8, 0.1];
+        let tof = 1.0;
+        let mu = 1.0;
+
+        let geom = Geometry::new(&r1, &r2, tof, mu, Direction::Prograde);
+
+        assert!((geom.tau_sq - geom.tau * geom.tau).abs() < 1e-14);
+        assert!((geom.tau_cu - geom.tau * geom.tau * geom.tau).abs() < 1e-14);
+        assert!((geom.abs_tau - geom.tau.abs()).abs() < 1e-14);
+    }
+
+    #[test]
+    fn test_geometry_s_parameter() {
+        // S = sqrt((r1+r2)^3 / mu) = (r1+r2) * sqrt((r1+r2)/mu)
+        let r1 = [2.0, 0.0, 0.0];
+        let r2 = [0.0, 3.0, 0.0];
+        let tof = 1.0;
+        let mu = 2.0;
+
+        let geom = Geometry::new(&r1, &r2, tof, mu, Direction::Prograde);
+
+        let r1_plus_r2 = 2.0 + 3.0;
+        let expected_s = r1_plus_r2 * (r1_plus_r2 / mu).sqrt();
+        assert!((geom.s - expected_s).abs() < 1e-14,
+            "S = {}, expected {}", geom.s, expected_s);
+
+        // tof_by_s = tof / S
+        assert!((geom.tof_by_s - tof / expected_s).abs() < 1e-14);
     }
 }

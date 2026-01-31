@@ -156,26 +156,25 @@ fn compute_w_near_zero(k: f64, tn_plus_pi: f64, dw: &mut [f64; 5], order: usize)
     // Series expansion of W around k=0
     // W = A0*(N+1/2)*pi - k + A2*(N+1/2)*pi*k^2 - (2/3)*k^3 + ...
     // where A0 = 1/sqrt(2), A2 = 3/(4*sqrt(2)), etc.
-    const A0: f64 = 0.7071067811865476; // 1/sqrt(2)
-    const A2: f64 = 0.5303300858899107; // 3/(4*sqrt(2))
-    const A4: f64 = 0.33145630368119417; // 15/(32*sqrt(2))
-    const A6: f64 = 0.19337117714736327; // 35/(128*sqrt(2))
-    const A8: f64 = 0.10883378339539184; // 315/(2048*sqrt(2))
+    const A0: f64 = 0.3535533905932738; // 1/(2*sqrt(2))
+    const A2: f64 = 0.2651650429449553; // 3/(8*sqrt(2))
+    const A4: f64 = 0.1657281518405971; // 15/(64*sqrt(2))
+    const A6: f64 = 0.09667475524034829; // 35/(256*sqrt(2))
+    const A8: f64 = 0.05437954982269591; // 315/(4096*sqrt(2))
     
-    dw[0] = A0 * tn_plus_pi 
-        - k 
-        + A2 * tn_plus_pi * k2 
-        - (2.0/3.0) * k3 
-        + A4 * tn_plus_pi * k4 
-        - 0.4 * k5 
-        + A6 * tn_plus_pi * k6 
-        - (2.0/7.0) * k7 
+    dw[0] = A0 * tn_plus_pi
+        - k
+        + A2 * tn_plus_pi * k2
+        - (2.0/3.0) * k3
+        + A4 * tn_plus_pi * k4
+        - 0.4 * k5
+        + A6 * tn_plus_pi * k6
+        - (8.0/35.0) * k7
         + A8 * tn_plus_pi * k8;
     
     // Derivatives follow from term-by-term differentiation
     // For now, fall back to general formula if derivatives needed
     if order >= 1 {
-        let k_sq_m1 = k2 - 1.0;
         let m = 2.0 - k2;
         let one_by_m = 1.0 / m;
         let t2 = 3.0 * dw[0];
@@ -310,10 +309,138 @@ mod tests {
     
     #[test]
     fn test_w_ellipse_basic() {
-        // For k=0, W = (pi/2) / sqrt(2) for zero-rev (N=0)
-        // Actually W(0) = pi/(2*sqrt(2)) ≈ 1.1107
+        // For k=0, W(0) = pi/(2*sqrt(2)) ≈ 1.1107 (zero-rev, N=0)
+        // The near-zero series with tn_plus_pi = pi gives:
+        //   W(0) = A0 * pi = (1/(2*sqrt(2))) * pi = pi/(2*sqrt(2))
         let dw = compute_w_and_derivatives(0.0, true, 0.0, 0);
         let expected = PI * 0.5 * std::f64::consts::FRAC_1_SQRT_2;
-        assert!((dw[0] - expected).abs() < 0.01, "W(0) = {}, expected ~{}", dw[0], expected);
+        assert!((dw[0] - expected).abs() < 1e-12, "W(0) = {}, expected {}", dw[0], expected);
+    }
+
+    #[test]
+    fn test_w_zero_all_derivatives() {
+        // At k=0, check W and all derivatives via the general ellipse formula
+        // General formula: W(0) = acos(0^2-1) / (2-0^2)^(3/2) - 0/(2-0^2)
+        //                       = acos(-1) / 2^(3/2) = pi / (2*sqrt(2))
+        let dw = compute_w_and_derivatives(0.0, true, 0.0, 4);
+
+        let expected_w = PI / (2.0 * SQRT_2);
+        assert!((dw[0] - expected_w).abs() < 1e-12, "W(0) = {}, expected {}", dw[0], expected_w);
+
+        // dW/dk at k=0: recurrence gives (3*W*0 - 2)/(2-0) = -1
+        assert!((dw[1] - (-1.0)).abs() < 1e-12, "W'(0) = {}, expected -1", dw[1]);
+
+        // d2W/dk2 at k=0: (5*(-1)*0 + 3*W)/2 = 3*W/2
+        let expected_w2 = 1.5 * expected_w;
+        assert!((dw[2] - expected_w2).abs() < 1e-12, "W''(0) = {}, expected {}", dw[2], expected_w2);
+
+        // d3W/dk3 at k=0: (7*W''*0 + 8*W')/2 = 8*(-1)/2 = -4
+        assert!((dw[3] - (-4.0)).abs() < 1e-12, "W'''(0) = {}, expected -4", dw[3]);
+
+        // d4W/dk4 at k=0: (9*(-4)*0 + 15*W'')/2 = 15*W''/2
+        let expected_w4 = 7.5 * expected_w2;
+        assert!((dw[4] - expected_w4).abs() < 1e-12, "W''''(0) = {}, expected {}", dw[4], expected_w4);
+    }
+
+    #[test]
+    fn test_w_continuity_near_zero_boundary() {
+        // Test continuity across the near-zero / general-ellipse boundary
+        // ZERO_BAND = 0.02, so test just inside and outside
+        let k_inside = 0.019; // uses near-zero series
+        let k_outside = 0.021; // uses general ellipse formula
+
+        let dw_in = compute_w_and_derivatives(k_inside, true, 0.0, 2);
+        let dw_out = compute_w_and_derivatives(k_outside, true, 0.0, 2);
+
+        // W should be continuous — check that the values at nearby points are close
+        // Estimate derivative magnitude ~1 => dW ~ 0.002 over dk=0.002
+        assert!((dw_in[0] - dw_out[0]).abs() < 0.01,
+            "W discontinuity at zero boundary: {} vs {}", dw_in[0], dw_out[0]);
+        assert!((dw_in[1] - dw_out[1]).abs() < 0.1,
+            "W' discontinuity at zero boundary: {} vs {}", dw_in[1], dw_out[1]);
+    }
+
+    #[test]
+    fn test_w_continuity_near_parabola_boundary() {
+        // Test continuity across the near-parabola / general boundary
+        // PARABOLA_BAND = 0.02
+        let k_inside = SQRT_2 - 0.019; // uses near-parabola series
+        let k_outside = SQRT_2 - 0.021; // uses general ellipse formula
+
+        let dw_in = compute_w_and_derivatives(k_inside, true, 0.0, 2);
+        let dw_out = compute_w_and_derivatives(k_outside, true, 0.0, 2);
+
+        assert!((dw_in[0] - dw_out[0]).abs() < 0.01,
+            "W discontinuity at parabola boundary: {} vs {}", dw_in[0], dw_out[0]);
+        assert!((dw_in[1] - dw_out[1]).abs() < 0.1,
+            "W' discontinuity at parabola boundary: {} vs {}", dw_in[1], dw_out[1]);
+    }
+
+    #[test]
+    fn test_w_hyperbolic() {
+        // For k > sqrt(2), W should be computed via acosh formula
+        let k = 2.0;
+        let dw = compute_w_and_derivatives(k, true, 0.0, 2);
+
+        // All should be finite
+        assert!(dw[0].is_finite(), "W({}) not finite", k);
+        assert!(dw[1].is_finite(), "W'({}) not finite", k);
+        assert!(dw[2].is_finite(), "W''({}) not finite", k);
+
+        // For hyperbolic, W should be positive (acosh term dominates)
+        // m = 2 - 4 = -2, neg_m = 2, sqrt_neg_m_cubed = 1/(2*sqrt(2))
+        // acosh_val = ln(3 + sqrt(8)) = ln(3 + 2*sqrt(2))
+        // W = -acosh_val / (2*sqrt(2)) - k/m = -acosh_val/(2*sqrt(2)) + 1
+        let m = 2.0 - k * k;
+        let k_sq_m1 = k * k - 1.0;
+        let neg_m = -m;
+        let acosh_val = (k_sq_m1 + (k_sq_m1 * k_sq_m1 - 1.0).sqrt()).ln();
+        let sqrt_neg_m_cubed = (1.0 / (neg_m * neg_m * neg_m)).sqrt();
+        let expected = -acosh_val * sqrt_neg_m_cubed - k / m;
+        assert!((dw[0] - expected).abs() < 1e-14,
+            "W({}) = {}, expected {}", k, dw[0], expected);
+    }
+
+    #[test]
+    fn test_w_negative_k_ellipse() {
+        // Negative k (still elliptic if k^2 < 2)
+        let k = -1.0;
+        let dw = compute_w_and_derivatives(k, true, 0.0, 2);
+        assert!(dw[0].is_finite(), "W({}) not finite", k);
+
+        // Verify against general formula directly
+        let m = 2.0 - k * k; // = 1
+        let sqrt_m_cubed = 1.0; // (1/1)^(3/2)
+        let acos_val = (k * k - 1.0_f64).clamp(-1.0, 1.0).acos(); // acos(0) = pi/2
+        // k < 0: use 2*pi - acos branch
+        let expected = (TWO_PI - acos_val) * sqrt_m_cubed - k / m;
+        assert!((dw[0] - expected).abs() < 1e-14,
+            "W({}) = {}, expected {}", k, dw[0], expected);
+    }
+
+    #[test]
+    fn test_w_derivative_recurrence() {
+        // Verify the recurrence relation: dW/dk = (3*W*k - 2) / m
+        // at several k values using the general formula
+        for &k in &[0.5, 1.0, -0.5, 1.8, 2.5] {
+            let dw = compute_w_and_derivatives(k, true, 0.0, 1);
+            let m = 2.0 - k * k;
+            if m.abs() < 1e-10 { continue; }
+            let recurrence_val = (3.0 * dw[0] * k - 2.0) / m;
+            assert!((dw[1] - recurrence_val).abs() < 1e-12,
+                "Recurrence failed at k={}: W'={}, recurrence={}", k, dw[1], recurrence_val);
+        }
+    }
+
+    #[test]
+    fn test_w_multi_rev() {
+        // Multi-rev (N=1): W should include the 2*pi*N offset
+        let two_pi_n = TWO_PI;
+        let dw = compute_w_and_derivatives(0.0, false, two_pi_n, 0);
+
+        // W(0, N=1) = A0 * (2*pi + pi) = (1/(2*sqrt(2))) * 3*pi
+        let expected = 3.0 * PI / (2.0 * SQRT_2);
+        assert!((dw[0] - expected).abs() < 1e-12,
+            "W(0, N=1) = {}, expected {}", dw[0], expected);
     }
 }
