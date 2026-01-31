@@ -8,13 +8,19 @@ license = "GPL-3.0"
 repository = "https://doi.org/10.5281/zenodo.3479923"
 keywords = ["astrodynamics", "orbital-mechanics", "lambert", "trajectory"]
 categories = ["science", "aerospace"]
+build = "build.rs"
 
 [dependencies]
 
 [dev-dependencies]
 approx = "0.5"
 
+[build-dependencies]
+cc = { version = "1", optional = true }
+
 [features]
 default = []
 # Enable second-order sensitivities (Hessians)
 sensitivities = []
+# Enable C Gooding Lambert solver for cross-validation tests
+gooding-ffi = ["cc"]
