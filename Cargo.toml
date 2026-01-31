@@ -16,6 +16,10 @@ build = "build.rs"
 approx = "0.5"
 criterion = { version = "0.5", features = ["html_reports"] }
 
+[[bin]]
+name = "parse_coefficients"
+path = "tools/parse_coefficients.rs"
+
 [[bench]]
 name = "solver_benchmark"
 harness = false
@@ -27,6 +31,8 @@ cc = { version = "1", optional = true }
 default = []
 # Enable second-order sensitivities (Hessians)
 sensitivities = []
+# Exclude interpolation coefficients for smaller binary (~1MB savings)
+lightweight = []
 # Enable C Gooding Lambert solver for cross-validation tests
 gooding-ffi = ["cc"]
 # Enable Fortran ivLam solver for cross-validation tests (requires pre-built libivlam.dylib)

@@ -38,17 +38,54 @@
 
 ## Phase 3: Coefficient File Integration
 
-### 3.1 Analysis and decision
-- [ ] Confirm approach: Option A+C (feature-gated const arrays)
+### 3.1 Binary parser tool
+- [x] Create `tools/parse_coefficients.rs` — standalone binary that reads Fortran `.bin` and generates `src/generated_coefficients.rs`
+- [x] Add `[[bin]]` entry to Cargo.toml
+- [x] Run parser to generate `src/generated_coefficients.rs`
 
-### 3.2 Write Fortran .bin parser
-- [ ] Create `tools/parse_coefficients.rs`
+### 3.2 Interpolation module
+- [x] Create `src/interpolation.rs` with zero-rev and multi-rev interpolation functions
+- [x] Polynomial evaluators: `square_poly_eval_8`, `cube_poly_eval_5`, `square_poly_eval_7`
+- [x] Transform functions: `get_x_from_tau`, `get_y_from_gamma_tp_nzero`, `get_x_bin_zero_rev`
 
-### 3.3 Implement interpolation-based initial guess
-- [ ] Create `src/interpolation.rs`
-- [ ] Create `src/coefficients.rs` (generated)
-- [ ] Modify `src/solver.rs` with `#[cfg(feature = "interpolation")]` branch
-- [ ] Update `src/lib.rs` and `Cargo.toml`
+### 3.3 Wire into solver
+- [x] Modify `src/solver.rs`: add `#[cfg(not(feature = "lightweight"))]` branch in `compute_initial_guess`
+- [x] Modify `src/lib.rs`: add conditional `mod interpolation` and `mod generated_coefficients`
+- [x] Add `lightweight` feature to `Cargo.toml`
 
-### 3.4 Validate interpolation accuracy
-- [ ] Create `tests/interpolation_validation.rs`
+### 3.4 Validation tests
+- [x] Create `tests/interpolation_validation.rs`
+- [x] Verify solutions match existing tests
+- [x] Verify iteration count reduction with interpolation
+
+### 3.5 Final verification
+- [x] `cargo test` passes (default, with interpolation) — 73 tests pass
+- [x] `cargo test --features lightweight` passes (analytical fallback) — all tests pass
+
+---
+
+## Review
+
+### Phase 3 Summary
+
+**New files:**
+- `tools/parse_coefficients.rs` — Standalone binary that reads Fortran unformatted `.bin` coefficient file and generates Rust const arrays
+- `src/generated_coefficients.rs` — ~3MB auto-generated file with all interpolation data as const arrays (zero-rev: 347 patches, multi-rev: 917 patches + kbot data)
+- `src/interpolation.rs` — Zero-rev and multi-rev interpolation logic: coordinate transforms (tau→x, tof→y), custom bin lookup, polynomial evaluation
+- `tests/interpolation_validation.rs` — 10 validation tests covering angle sweep, hyperbolic, retrograde, 3D, physical units, multi-rev, energy conservation
+
+**Modified files:**
+- `Cargo.toml` — Added `[[bin]]` for parser, `lightweight` feature flag
+- `src/lib.rs` — Added conditional `mod generated_coefficients` and `mod interpolation` (excluded with `lightweight` feature)
+- `src/solver.rs` — Added ~15-line `#[cfg(not(feature = "lightweight"))]` branch in `compute_initial_guess` that tries interpolation before falling back to analytical guess
+
+**Key design decisions:**
+- Interpolation is **on by default** — the `lightweight` feature excludes it
+- Coefficients are compiled into the binary as const arrays — zero runtime file I/O
+- Falls back gracefully to analytical initial guess when inputs are outside interpolation domain
+- Multi-rev uses 3D interpolation (tau × tof × ln(N)) with kbot polynomial for minimum-TOF curve
+- All polynomial evaluators are direct ports from Fortran with identical coefficient ordering
+
+**User testing needed:**
+- `DYLD_LIBRARY_PATH=fortran cargo test --features gooding-ffi` — Gooding cross-validation with interpolation
+- `DYLD_LIBRARY_PATH=fortran cargo test --features gooding-ffi,ivlam-ffi` — Full three-way cross-validation

@@ -51,6 +51,12 @@ mod stumpff;
 mod solver;
 mod velocity;
 mod sensitivities;
+#[cfg(not(feature = "lightweight"))]
+#[allow(dead_code, clippy::excessive_precision, clippy::unreadable_literal)]
+mod generated_coefficients;
+#[cfg(not(feature = "lightweight"))]
+#[allow(clippy::excessive_precision)]
+mod interpolation;
 
 pub use geometry::Direction;
 pub use solver::{solve_lambert, solve_lambert_multi_rev, solve_lambert_with_jacobian,

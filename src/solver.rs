@@ -144,7 +144,7 @@ pub fn solve_lambert(
     };
 
     // Get initial guess and clamp to valid range
-    let k_initial = compute_initial_guess(&geom, n_is_zero, n_abs);
+    let k_initial = compute_initial_guess(&geom, n_is_zero, n_rev);
     let k_initial = k_initial.clamp(k_left + K_MARGIN, k_right - K_MARGIN);
 
     // Create initial solver state
@@ -313,7 +313,7 @@ pub fn solve_lambert_with_jacobian(
         (K_RANGE_LEFT_MULTI_REV, K_RANGE_RIGHT_MULTI_REV)
     };
 
-    let k_initial = compute_initial_guess(&geom, n_is_zero, n_abs);
+    let k_initial = compute_initial_guess(&geom, n_is_zero, n_rev);
     let k_initial = k_initial.clamp(k_left + K_MARGIN, k_right - K_MARGIN);
 
     let mut state = SolverState::new(k_initial, geom.tau);
@@ -383,10 +383,28 @@ pub fn solve_lambert_with_jacobian(
 
 /// Compute initial guess for k based on problem parameters.
 ///
-/// For a production implementation, this would use the interpolation tables
-/// from the ivLam coefficient file. For now, we use a simple analytical
-/// approximation.
-fn compute_initial_guess(geom: &Geometry, n_is_zero: bool, n_abs: usize) -> f64 {
+/// When the `lightweight` feature is NOT enabled (default), this uses interpolation
+/// tables from the ivLam coefficient file for accurate initial guesses (~1-2 iterations).
+/// Falls back to analytical approximation if interpolation returns None or if
+/// the `lightweight` feature is enabled.
+fn compute_initial_guess(geom: &Geometry, n_is_zero: bool, n_rev: i32) -> f64 {
+    #[cfg(not(feature = "lightweight"))]
+    {
+        if n_is_zero {
+            if let Some(k) = crate::interpolation::interpolate_initial_k_zero_rev(
+                geom.tau, geom.tof_by_s,
+            ) {
+                return k;
+            }
+        } else {
+            if let Some(k) = crate::interpolation::interpolate_initial_k_multi_rev(
+                geom.tau, geom.tof_by_s, n_rev,
+            ) {
+                return k;
+            }
+        }
+    }
+
     if n_is_zero {
         // Zero-rev: start near the middle of the valid range
         // A better guess would use parabolic flight time
