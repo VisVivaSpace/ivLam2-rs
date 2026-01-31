@@ -20,7 +20,7 @@
 //! ## Example
 //!
 //! ```rust
-//! use lambert_solver::{solve_lambert, Direction};
+//! use lambert_solver::{solve_lambert, solve_lambert_with_jacobian, Direction};
 //!
 //! // Define the problem: two position vectors and time of flight
 //! let r1 = [1.0, 0.0, 0.0];        // Initial position (DU)
@@ -38,6 +38,12 @@
 //!     }
 //!     Err(e) => eprintln!("Error: {:?}", e),
 //! }
+//!
+//! // Solve with analytical Jacobian
+//! let (sol, sens) = solve_lambert_with_jacobian(
+//!     &r1, &r2, tof, mu, Direction::Prograde, 0,
+//! ).unwrap();
+//! let dv1_dr1 = sens.dv1_dr1(); // 3x3 partial derivative matrix
 //! ```
 
 mod geometry;

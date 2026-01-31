@@ -16,7 +16,8 @@ cargo test                           # Run all tests
 cargo test test_name                 # Run a single test
 cargo test -- --nocapture            # Tests with stdout
 cargo clippy                         # Lint
-cargo build --features sensitivities # Build with optional sensitivities module
+cargo test --features gooding-ffi     # Tests including C Gooding cross-validation
+DYLD_LIBRARY_PATH=fortran cargo test --features gooding-ffi,ivlam-ffi  # All tests including Fortran ivLam
 ```
 
 ## Architecture
@@ -27,11 +28,11 @@ The solver pipeline flows through four modules in sequence:
 
 2. **stumpff.rs** — Computes W(k) and its derivatives. Region-based: Taylor series near k≈0 and k≈√2, arccos for elliptic (k²<2), acosh/log for hyperbolic (k²>2). The W function unifies all conic types into a single framework.
 
-3. **solver.rs** — Main entry points `solve_lambert()` and `solve_lambert_multi_rev()`. Iterates on k using Newton-Raphson with up to 3rd-order corrections. Convergence: |F| < 1e-14 · max(T/S, 1), max 25 iterations. Multi-rev returns both short-period and long-period solutions.
+3. **solver.rs** — Main entry points `solve_lambert()`, `solve_lambert_multi_rev()`, and `solve_lambert_with_jacobian()`. Iterates on k using Newton-Raphson with up to 3rd-order corrections. Convergence: |F| < 1e-14 · max(T/S, 1), max 25 iterations. Multi-rev returns both short-period and long-period solutions.
 
 4. **velocity.rs** — Computes v₁ and v₂ from Lagrange coefficients (f, g, ġ) using the solved k value.
 
-5. **sensitivities.rs** — (Feature-gated, placeholder) Jacobian computation ∂[v₁,v₂]/∂[r₁,r₂,tof].
+5. **sensitivities.rs** — First-order Jacobian ∂[v₁,v₂]/∂[r₁,r₂,tof] via implicit function theorem: dk/dy = -(∂F/∂k)⁻¹·(∂F/∂y), total Dz/Dy = ∂z/∂y + (∂z/∂k)·(dk/dy). Validated against finite differences and Fortran ivLam reference.
 
 **Key variable**: k is the iteration variable that determines conic type: k < √2 = ellipse, k = √2 = parabola, k > √2 = hyperbola.
 

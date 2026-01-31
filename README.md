@@ -10,7 +10,7 @@ The implementation uses the **vercosine formulation** which:
 - Is singularity-free except for the true singularity (r₁ = r₂)
 - Handles all conic types (elliptic, parabolic, hyperbolic) with a single unified equation
 - Supports multi-revolution transfers (N complete orbits)
-- Includes first and second-order sensitivities (with the `sensitivities` feature)
+- Includes analytical first-order sensitivities (Jacobian ∂[v₁,v₂]/∂[r₁,r₂,T])
 
 ## References
 
@@ -78,6 +78,36 @@ Solves Lambert's problem for a single transfer.
 - `direction`: `Direction::Prograde` (short way) or `Direction::Retrograde` (long way)
 - `n_rev`: Number of complete revolutions (0 for direct transfer)
 
+#### `solve_lambert_with_jacobian`
+
+```rust
+pub fn solve_lambert_with_jacobian(
+    r1: &[f64; 3],
+    r2: &[f64; 3],
+    tof: f64,
+    mu: f64,
+    direction: Direction,
+    n_rev: i32,
+) -> Result<(LambertSolution, LambertSensitivities), LambertError>
+```
+
+Solves Lambert's problem and computes the analytical 6×7 Jacobian ∂[v₁,v₂]/∂[r₁,r₂,T] via the implicit function theorem. Adds roughly one iteration's worth of computation to the base solve.
+
+```rust
+use lambert_solver::{solve_lambert_with_jacobian, Direction};
+
+let r1 = [1.0, 0.0, 0.0];
+let r2 = [0.0, 1.0, 0.0];
+let tof = std::f64::consts::PI / 2.0;
+
+let (sol, sens) = solve_lambert_with_jacobian(&r1, &r2, tof, 1.0, Direction::Prograde, 0)
+    .unwrap();
+
+let dv1_dr1 = sens.dv1_dr1();   // 3×3 matrix
+let dv1_dtof = sens.dv1_dtof();  // 3-vector
+let full_jac = &sens.jacobian;   // 6×7 [[f64; 7]; 6]
+```
+
 #### `solve_lambert_multi_rev`
 
 ```rust
@@ -108,6 +138,16 @@ pub struct LambertSolution {
     pub warning: Option<String>, // Near-singularity warnings
 }
 ```
+
+#### `LambertSensitivities`
+
+```rust
+pub struct LambertSensitivities {
+    pub jacobian: [[f64; 7]; 6],  // dz/dy: rows=outputs, cols=inputs
+}
+```
+
+Accessor methods: `dv1_dr1()`, `dv1_dr2()`, `dv1_dtof()`, `dv2_dr1()`, `dv2_dr2()`, `dv2_dtof()`, `transpose()`.
 
 #### `Direction`
 
@@ -152,12 +192,12 @@ The variable $k$ determines the conic type:
 
 ## Features
 
-- **`sensitivities`**: Enable first and second-order partial derivatives of the solution
+First-order sensitivities (Jacobian) are always available via `solve_lambert_with_jacobian`.
 
-```toml
-[dependencies]
-lambert_solver = { version = "0.1", features = ["sensitivities"] }
-```
+Optional Cargo features for testing only:
+
+- **`gooding-ffi`**: Cross-validate against C Gooding Lambert solver
+- **`ivlam-ffi`**: Cross-validate against Fortran ivLam2 reference implementation
 
 ## Implementation Notes
 
@@ -179,14 +219,11 @@ The minimum time of flight for N revolutions can be computed from the geometry.
 
 ### Known Limitations
 
-1. **Initial guess**: The current implementation uses simple analytical approximations. 
-   For production use, the interpolation tables from the original ivLam2 coefficient 
-   file would provide better initial guesses.
+1. **Initial guess**: Uses simple analytical approximations. The interpolation tables
+   from the original ivLam2 coefficient file would provide better initial guesses.
 
-2. **Sensitivities**: The sensitivity module is a placeholder. Full implementation
-   requires translating ~3000 lines of auto-generated derivative code.
-
-3. **No network access**: Cannot download the coefficient file for optimal initial guesses.
+2. **Second-order sensitivities**: Only first-order Jacobian is implemented. The
+   second-order Hessians (d²z/dy²) are not yet available.
 
 ## License
 
