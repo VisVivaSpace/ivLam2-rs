@@ -44,11 +44,9 @@ mod geometry;
 mod stumpff;
 mod solver;
 mod velocity;
-#[cfg(feature = "sensitivities")]
 mod sensitivities;
 
 pub use geometry::Direction;
-pub use solver::{solve_lambert, solve_lambert_multi_rev, LambertSolution, LambertError};
-
-#[cfg(feature = "sensitivities")]
+pub use solver::{solve_lambert, solve_lambert_multi_rev, solve_lambert_with_jacobian,
+                 LambertSolution, LambertError};
 pub use sensitivities::LambertSensitivities;

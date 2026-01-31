@@ -10,7 +10,7 @@ mod common;
 
 // Import from library crate to ensure build.rs link flags propagate
 use lambert_solver::solve_lambert as _;
-use common::ivlam_ffi::{ivlam_with_derivs, ivlam_dzdy_to_jacobian, ivlam_zero_rev};
+use common::ivlam_ffi::{ivlam_with_derivs, ivlam_zero_rev};
 use std::f64::consts::PI;
 
 #[test]
@@ -22,7 +22,7 @@ fn test_ivlam_derivatives_90_deg() {
     let result = ivlam_with_derivs(&r1, &r2, tof, 1, 0);
     assert_eq!(result.info, 0, "ivLam deriv solver failed: info={}", result.info);
 
-    let jac = ivlam_dzdy_to_jacobian(&result.dzdy_t);
+    let jac = &result.jacobian;
 
     // Verify velocities match zero-rev solver
     let basic = ivlam_zero_rev(&r1, &r2, tof, 1);
@@ -72,7 +72,7 @@ fn test_ivlam_derivatives_45_deg() {
     let result = ivlam_with_derivs(&r1, &r2, tof, 1, 0);
     assert_eq!(result.info, 0, "ivLam deriv solver failed: info={}", result.info);
 
-    let jac = ivlam_dzdy_to_jacobian(&result.dzdy_t);
+    let jac = &result.jacobian;
 
     println!("\n=== ivLam Reference Jacobian for 45° transfer (mu=1) ===");
     println!("r1 = {:?}", r1);
@@ -100,7 +100,7 @@ fn test_ivlam_derivatives_3d() {
     let result = ivlam_with_derivs(&r1, &r2, tof, 1, 0);
     assert_eq!(result.info, 0, "ivLam deriv solver failed: info={}", result.info);
 
-    let jac = ivlam_dzdy_to_jacobian(&result.dzdy_t);
+    let jac = &result.jacobian;
 
     println!("\n=== ivLam Reference Jacobian for 3D transfer (mu=1) ===");
     println!("r1 = {:?}", r1);

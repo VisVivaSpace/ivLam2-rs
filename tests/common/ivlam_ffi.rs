@@ -106,10 +106,11 @@ pub struct IvlamDerivResult {
     pub v2: [f64; 3],
     pub info: i32,
     pub halfrev: i32,
-    /// Jacobian dz/dy transposed: dzdyT[j][i] = ∂z_i/∂y_j
+    /// Jacobian: jacobian[i][j] = ∂z_i/∂y_j
     /// where z = [v1, v2] (6 components), y = [r1, r2, tof] (7 components)
-    /// Fortran layout: column-major (7, 6)
-    pub dzdy_t: [[f64; 6]; 7],
+    /// Fortran dzdyT(7,6) column-major maps to Rust [[f64; 7]; 6] row-major:
+    /// each Fortran column (7 y-partials for one z-output) becomes one Rust row.
+    pub jacobian: [[f64; 7]; 6],
 }
 
 /// Solve Lambert with derivatives using ivLam (mu=1).
@@ -127,8 +128,8 @@ pub fn ivlam_with_derivs(
     let mut v2 = [0.0_f64; 3];
     let mut info: c_int = 0;
     let mut halfrev: c_int = 0;
-    let mut dzdy_t = [[0.0_f64; 6]; 7];
-    let mut d2zdy_t = [[[0.0_f64; 6]; 7]; 7];
+    let mut jacobian = [[0.0_f64; 7]; 6];
+    let mut d2zdy_t = [0.0_f64; 294]; // 7*7*6, unused (first-order only)
 
     unsafe {
         ivlam_ntilde_with_derivs_c(
@@ -142,8 +143,8 @@ pub fn ivlam_with_derivs(
             &mut info,
             &mut halfrev,
             0, // first-order only
-            dzdy_t.as_mut_ptr() as *mut f64,
-            d2zdy_t.as_mut_ptr() as *mut f64,
+            jacobian.as_mut_ptr() as *mut f64,
+            d2zdy_t.as_mut_ptr(),
         );
     }
 
@@ -152,19 +153,12 @@ pub fn ivlam_with_derivs(
         v2,
         info: info as i32,
         halfrev: halfrev as i32,
-        dzdy_t,
+        jacobian,
     }
 }
 
-/// Convert ivLam's transposed Jacobian dzdyT(7,6) to our convention jacobian[6][7].
-/// Fortran dzdyT(j,i) = ∂z_i/∂y_j, stored column-major.
-/// Our jacobian[i][j] = ∂z_i/∂y_j.
-pub fn ivlam_dzdy_to_jacobian(dzdy_t: &[[f64; 6]; 7]) -> [[f64; 7]; 6] {
-    let mut jac = [[0.0; 7]; 6];
-    for i in 0..6 {
-        for j in 0..7 {
-            jac[i][j] = dzdy_t[j][i];
-        }
-    }
-    jac
+/// Get ivLam's Jacobian in our convention: jacobian[i][j] = ∂z_i/∂y_j.
+/// The Fortran column-major dzdyT(7,6) already maps directly to Rust [[f64; 7]; 6].
+pub fn ivlam_jacobian(result: &IvlamDerivResult) -> &[[f64; 7]; 6] {
+    &result.jacobian
 }
