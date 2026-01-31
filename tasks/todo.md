@@ -214,6 +214,31 @@
 
 ---
 
+## Phase 8: Enhance README with Algorithm Features from Russell 2022
+
+- [x] Read current README.md
+- [x] Trim Overview section to just the problem statement
+- [x] Add new `## Algorithm` section between Overview and References
+- [x] Verify with `cargo clippy` — no regressions
+- [x] Visual review for tone
+
+### Phase 8 Summary — README Algorithm Section
+
+**Changes to `README.md`:**
+- Trimmed `## Overview` to just the problem statement (what Lambert's problem is, what the crate does)
+- Moved the bullet list (singularity-free, unified equation, multi-rev, sensitivities) out of Overview to avoid duplication
+- Added new `## Algorithm` section between Overview and References, covering:
+  - **Unified formulation** — single iteration variable k, no conic-type branching
+  - **Convergence** — Newton-Raphson with 3rd-order corrections, 1–2 iterations with interpolation
+  - **Robustness** — full parameter space coverage, safeguards for stress cases, 10¹⁰ randomized test results
+  - **Performance** — 1.7–2.5× faster than Gooding, accuracy at high rev counts
+  - **Analytical sensitivities** — Jacobian and Hessian via IFT, 6–17× faster than FD, applications
+
+**Files modified:** `README.md`, `tasks/todo.md`
+**No `.rs` files, `docs/`, `Cargo.toml`, or `LICENSE` modified.**
+
+---
+
 ### Phase 6 Summary — Code Review Fixes
 
 **Refactoring (H1+H2+M1):**

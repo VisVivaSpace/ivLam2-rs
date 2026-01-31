@@ -6,11 +6,31 @@ A Rust implementation of the vercosine Lambert solver based on the ivLam2 algori
 
 This crate solves **Lambert's problem**, the classic two-point boundary value problem in orbital mechanics: given two position vectors **r₁** and **r₂**, a time of flight *T*, and the gravitational parameter *μ*, find the initial and final velocity vectors **v₁** and **v₂**.
 
-The implementation uses the **vercosine formulation** which:
-- Is singularity-free except for the true singularity (r₁ = r₂)
-- Handles all conic types (elliptic, parabolic, hyperbolic) with a single unified equation
-- Supports multi-revolution transfers (N complete orbits)
-- Includes analytical first- and second-order sensitivities (Jacobian and Hessian)
+## Algorithm
+
+The solver uses the **vercosine formulation** introduced by Russell (2019, 2022). The following properties are documented in the Russell 2022 JGCD paper.
+
+### Unified formulation
+
+A single iteration variable *k* spans all conic types — elliptic, parabolic, and hyperbolic — without branching in the core iteration. The W function (a Stumpff-like function) is analytic across all regimes. The conic type is determined by the solved value of *k*: *k* < √2 for ellipses, *k* = √2 for parabolas, and *k* > √2 for hyperbolas.
+
+### Convergence
+
+The solver uses Newton-Raphson iteration with up to third-order corrections. With the interpolation-based initial guess (from a precomputed coefficient table), convergence typically requires 1–2 iterations. Without it, 2–5 iterations are typical.
+
+### Robustness
+
+The solver handles the full Lambert parameter space: all geometries, flight times, revolution counts (including cases with N up to 10⁶), and both transfer directions. Stress cases — near-π transfers, near-minimum-time multi-rev solutions, low-flight-time hyperbolas through periapsis — are handled via safeguards including boundary clamping, step limiting, bisection fallback, and log-form TOF evaluation for large flight times. Russell reports zero failures across 10¹⁰ randomized test cases in the Fortran reference implementation.
+
+### Performance
+
+In benchmarks reported in the paper, the vercosine solver is 1.7× (zero-rev) to 2.5× (multi-rev) faster than Gooding's method, the established state-of-the-art benchmark. It also maintains accuracy at high revolution counts where Gooding's method degrades.
+
+### Analytical sensitivities
+
+First-order (6×7 Jacobian) and second-order (6×7×7 Hessian) partial derivatives of the output velocities with respect to input positions and flight time. These are derived via the implicit function theorem applied to the root-solved Lambert equation — a general technique applicable to any process with an embedded scalar root-solver. The expressions are exact (subject to convergence tolerance of the root-solver) and 6–17× faster to compute than finite-difference approximations. The Jacobian adds roughly one iteration's worth of computation to the base solve.
+
+The first-order Jacobian is useful for trajectory optimization (primer vector theory, gravity-assist tour design), orbit determination, guidance/navigation, and Monte Carlo sensitivity analysis. The second-order Hessian provides a locally quadratic model of the solution, enabling non-Gaussian uncertainty propagation, second-order optimization updates, and more accurate perturbation models for delta-v costs.
 
 ## References
 
