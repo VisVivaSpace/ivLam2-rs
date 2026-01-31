@@ -51,17 +51,21 @@ These skills are available:
 - **lamb.c & lamb.h** — C Gooding Lambert solver reference implementation, USE ONLY FOR TESTING. Entry point: `lambert(double gm, double r1[3], double r2[3], int nrev, double tdelt, double v1[3], double v2[3])`
 - **ivLamRuntimeV2p50_739981p74401.f90** — Fortran implementation of the ivLam2 algorithm, USE ONLY FOR TESTING
 
-## Tech Stack
+## Dependencies
 
-- **Rust** — preferred programming language (use **rust-mastery** skill)
-- **muad-dib** — https://crates.io/crates/muad-dib — reads SPICE ephemeris and planetary constants data. We wrote this crate.
-- **understated** — https://github.com/VisVivaSpace/understated — generates position/velocity data from SPICE data. We wrote this crate.
-- **bevy_entity_ptr** — https://crates.io/crates/bevy_entity_ptr — Bevy ECS Entities as smart pointers. We wrote this crate.
-- **bevy_autodiff** — https://crates.io/crates/bevy_autodiff — multi-threaded automatic differentiation. We wrote this crate.
+**Runtime:** None. Zero runtime dependencies.
+
+**Dev/test only:**
+- **approx** (dev-dependency) — floating-point comparison macros for tests
+- **cc** (build-dependency, optional) — compiles `csrc/lamb.c` when the `gooding-ffi` feature is enabled for cross-validation tests
+
+**Feature-gated FFI (testing only):**
+- `gooding-ffi` — links C Gooding Lambert solver via `cc`
+- `ivlam-ffi` — links pre-built Fortran `libivlam.dylib` (requires `DYLD_LIBRARY_PATH=fortran` at runtime)
 
 ## Key Patterns
 
-1. **Error Handling**: Custom error types with `thiserror`, `Result<T>` alias.
+1. **Error Handling**: Custom `LambertError` enum, `Result<T, LambertError>` returns.
 2. **Tolerance rule:** Non-iterative, deterministic computations (closed-form formulas, algebraic identities, pure arithmetic) must assert within floating-point precision (1e-10 to 1e-14). Only use loose tolerances for inherently approximate operations (iterative solvers, interpolated ephemeris data, coordinate conversions through trig functions) — and document why.
 
 ## Workflow Instructions
