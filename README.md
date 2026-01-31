@@ -82,7 +82,7 @@ Solves Lambert's problem for a single transfer.
 
 - `r1`, `r2`: Position vectors
 - `tof`: Time of flight (must be positive)
-- `mu`: Gravitational parameter
+- `mu`: Gravitational parameter (must be finite and positive)
 - `direction`: `Direction::Prograde` (short way) or `Direction::Retrograde` (long way)
 - `n_rev`: Number of complete revolutions (0 for direct transfer)
 
@@ -131,6 +131,21 @@ pub fn solve_lambert_with_hessian(
 
 Solves Lambert's problem and computes both the 6×7 Jacobian and the 6×7×7 Hessian (second-order sensitivities d²[v₁,v₂]/d[r₁,r₂,T]²). The Hessian is stored in `sens.hessians` as `Option<[[[f64; 7]; 7]; 6]>`.
 
+```rust
+use lambert_solver::{solve_lambert_with_hessian, Direction};
+
+let r1 = [1.0, 0.0, 0.0];
+let r2 = [0.0, 1.0, 0.0];
+let tof = std::f64::consts::PI / 2.0;
+
+let (sol, sens) = solve_lambert_with_hessian(&r1, &r2, tof, 1.0, Direction::Prograde, 0)
+    .unwrap();
+
+let dv1_dr1 = sens.dv1_dr1();              // 3×3 Jacobian block
+let hessians = sens.hessians.unwrap();      // 6×7×7
+let d2_v1x = hessians[0];                   // 7×7 Hessian of v1.x
+```
+
 #### `solve_lambert_multi_rev`
 
 ```rust
@@ -145,6 +160,36 @@ pub fn solve_lambert_multi_rev(
 ```
 
 Solves for both solutions when `|n_rev| > 0` (short-period and long-period).
+
+```rust
+use lambert_solver::{solve_lambert_multi_rev, Direction};
+
+let r1 = [1.0, 0.0, 0.0];
+let r2 = [-1.0, 0.1, 0.0];
+let tof = 20.0;
+
+let multi = solve_lambert_multi_rev(&r1, &r2, tof, 1.0, Direction::Prograde, 1).unwrap();
+println!("Short-period v1: {:?}", multi.short_period.v1);
+println!("Long-period  v1: {:?}", multi.long_period.v1);
+```
+
+### Physical Units Example (Earth, km/s)
+
+```rust
+use lambert_solver::{solve_lambert, Direction};
+
+let mu_earth = 398600.4418; // km^3/s^2
+
+// LEO departure, GEO arrival
+let r1 = [6678.0, 0.0, 0.0];       // LEO radius (km)
+let r2 = [0.0, 42164.0, 0.0];      // GEO radius (km)
+let tof = 5.0 * 3600.0;            // 5-hour transfer (seconds)
+
+let sol = solve_lambert(&r1, &r2, tof, mu_earth, Direction::Prograde, 0).unwrap();
+// Velocities are in km/s
+let speed = (sol.v1[0].powi(2) + sol.v1[1].powi(2) + sol.v1[2].powi(2)).sqrt();
+println!("Departure speed: {:.3} km/s", speed);
+```
 
 ### Types
 
@@ -166,7 +211,8 @@ pub struct LambertSolution {
 
 ```rust
 pub struct LambertSensitivities {
-    pub jacobian: [[f64; 7]; 6],  // dz/dy: rows=outputs, cols=inputs
+    pub jacobian: [[f64; 7]; 6],              // dz/dy: rows=outputs, cols=inputs
+    pub hessians: Option<[[[f64; 7]; 7]; 6]>, // d²z/dy²: populated by solve_lambert_with_hessian
 }
 ```
 

@@ -302,6 +302,7 @@ This prevents overflow and improves numerical conditioning.
 | `HalfRevolutionSingularity` | $\theta = \pi$ exactly | $|\tau| < 10^{-154}$ |
 | `NoSolutionForRevolutions` | $T_* < T_{\min}(N)$ | Iteration exits bounds |
 | `ConvergenceFailed` | Numerical issues | iterations $\geq 25$ and $|F| > 10^{-10}$ |
+| `InvalidInput` | $\mu \leq 0$, $\mu$ non-finite, or NaN/Inf in $\mathbf{r}_1$, $\mathbf{r}_2$, $T_*$ | Direct validation checks |
 
 ---
 

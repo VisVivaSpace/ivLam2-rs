@@ -157,7 +157,62 @@
 
 ---
 
+## Phase 7: Documentation Fixes & Examples
+
+### 7.1 Export `MultiRevSolution` from `lib.rs`
+- [x] Add `MultiRevSolution` to the `pub use solver::{...}` line
+
+### 7.2 Fix stale `docs/llm-context.md`
+- [x] Code mapping: `iterate_to_convergence()` → `solve_lambert_core()` (internal)
+- [x] Code mapping: add `validate_inputs()` row
+- [x] Code mapping: `interpolate_zero_rev()` → `interpolate_initial_k_zero_rev()`, `interpolate_multi_rev()` → `interpolate_initial_k_multi_rev()`
+
+### 7.3 Fix `docs/algorithm.md` error table
+- [x] Add `InvalidInput` row to the Error Conditions table
+
+### 7.4 Fix `README.md` staleness
+- [x] Update `LambertSensitivities` struct display to include `hessians` field
+- [x] Update `mu` parameter description to mention "must be finite and positive"
+
+### 7.5 Add doc-test examples to `lib.rs`
+- [x] Hessian (`solve_lambert_with_hessian`)
+- [x] Multi-rev (`solve_lambert_multi_rev`)
+- [x] Retrograde direction
+- [x] Physical units (Earth orbit, km/s)
+- [x] Error handling showing `InvalidInput`
+
+### 7.6 Add examples to `README.md`
+- [x] Hessian usage with accessing `sens.hessians`
+- [x] Multi-rev showing both short/long period
+- [x] Physical units example (LEO-to-GEO)
+
+### 7.7 Verification
+- [x] `cargo test` — 93 tests pass (41 unit + 45 integration + 7 doc-tests)
+- [x] `cargo test --doc` — all 7 doc-tests pass
+- [x] `cargo clippy` — no new warnings (pre-existing only)
+
+---
+
 ## Review
+
+### Phase 7 Summary — Documentation Fixes & Examples
+
+**Bug fix:** Exported `MultiRevSolution` from `lib.rs` — it was defined in `solver.rs` and used in the public API (`solve_lambert_multi_rev` return type) but not re-exported, so downstream users couldn't name the type.
+
+**Stale docs fixed:**
+- `docs/llm-context.md`: Updated code mapping table — `iterate_to_convergence()` → `solve_lambert_core()`, added `validate_inputs()` row, fixed interpolation function names to `interpolate_initial_k_zero_rev()` / `interpolate_initial_k_multi_rev()`
+- `docs/algorithm.md`: Added `InvalidInput` row to the Error Conditions table
+- `README.md`: Updated `LambertSensitivities` struct to show `hessians` field, added "must be finite and positive" to `mu` parameter description
+
+**New examples:**
+- `src/lib.rs`: 5 new doc-test examples (Hessian, multi-rev, retrograde, physical units LEO-to-GEO, error handling with `InvalidInput`)
+- `README.md`: 3 new code examples (Hessian with `sens.hessians`, multi-rev short/long period, physical units LEO-to-GEO)
+
+**Files modified:** `src/lib.rs`, `README.md`, `docs/algorithm.md`, `docs/llm-context.md`, `tasks/todo.md`
+
+**Test results:** 93 tests pass (41 unit + 45 integration + 7 doc-tests), clippy clean (pre-existing warnings only).
+
+---
 
 ### Phase 6 Summary — Code Review Fixes
 

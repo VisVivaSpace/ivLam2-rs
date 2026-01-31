@@ -83,9 +83,10 @@ IFT total derivative: $d\mathbf{v}/d\mathbf{y} = \partial\mathbf{v}/\partial\mat
 | Geometry (τ, S) | `Geometry::new()` | `geometry.rs` |
 | W(k) and derivatives | `compute_w_and_derivatives()` | `stumpff.rs` |
 | F(k), F', F'', F''' | `compute_tof_function()` | `solver.rs` |
-| Newton iteration | `iterate_to_convergence()` | `solver.rs` |
+| Input validation | `validate_inputs()` | `solver.rs` |
+| Newton iteration | `solve_lambert_core()` (internal) | `solver.rs` |
 | Initial guess (analytical) | `compute_initial_guess()` | `solver.rs` |
-| Initial guess (interpolation) | `interpolate_zero_rev()` / `interpolate_multi_rev()` | `interpolation.rs` |
+| Initial guess (interpolation) | `interpolate_initial_k_zero_rev()` / `interpolate_initial_k_multi_rev()` | `interpolation.rs` |
 | Lagrange f, g, ġ | `compute_velocities()` | `velocity.rs` |
 | Jacobian (dk/dy, dv/dy) | `LambertSensitivities::compute_first_order()` | `sensitivities.rs` |
 | Hessian (d²k/dy², d²v/dy²) | `LambertSensitivities::compute_with_hessians()` | `sensitivities.rs` |
