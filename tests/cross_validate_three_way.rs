@@ -116,3 +116,82 @@ fn test_three_way_hyperbolic() {
     let r2 = [0.0, 1.0, 0.0];
     three_way_check("hyperbolic", r1, r2, 0.1);
 }
+
+// ────────────────────────────────────────────────────────────────
+// Angle sweep (equal radii, mu=1)
+// ────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_three_way_angle_sweep() {
+    let r1 = [1.0, 0.0, 0.0];
+    for angle_deg in [5.0_f64, 15.0, 25.0, 30.0, 60.0, 75.0, 100.0, 110.0, 140.0, 150.0, 160.0] {
+        let angle = angle_deg.to_radians();
+        let r2 = [angle.cos(), angle.sin(), 0.0];
+        three_way_check(&format!("angle_{}°", angle_deg), r1, r2, angle);
+    }
+}
+
+// ────────────────────────────────────────────────────────────────
+// Radius ratio sweep (90° transfer, mu=1)
+// ────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_three_way_radius_ratio_sweep() {
+    let r1 = [1.0, 0.0, 0.0];
+    for ratio in [0.3_f64, 0.5, 0.7, 1.5, 2.0, 3.0, 5.0] {
+        let r2 = [0.0, ratio, 0.0];
+        let a = (1.0 + ratio) / 2.0;
+        let tof = PI * (a * a * a).sqrt() * 0.5;
+        three_way_check(&format!("ratio_{:.1}", ratio), r1, r2, tof);
+    }
+}
+
+// ────────────────────────────────────────────────────────────────
+// TOF variation (fixed 90° geometry, mu=1)
+// ────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_three_way_tof_sweep() {
+    let r1 = [1.0, 0.0, 0.0];
+    let r2 = [0.0, 1.0, 0.0];
+    for tof in [0.2_f64, 0.5, 1.0, 2.0, 5.0, 10.0] {
+        three_way_check(&format!("tof_{:.1}", tof), r1, r2, tof);
+    }
+}
+
+// ────────────────────────────────────────────────────────────────
+// 3D transfers
+// ────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_three_way_3d_inclined() {
+    let r1 = [1.0, 0.0, 0.0];
+    let r2 = [0.0, 0.866, 0.5]; // 30° inclination, |r2|=1
+    three_way_check("3D_30inc", r1, r2, PI / 2.0);
+}
+
+#[test]
+fn test_three_way_3d_steep() {
+    let r1 = [1.0, 0.0, 0.0];
+    let r2 = [0.0, 0.5, 0.866]; // 60° inclination, |r2|=1
+    three_way_check("3D_60inc", r1, r2, PI / 2.0);
+}
+
+#[test]
+fn test_three_way_3d_both_off_plane() {
+    let s: f64 = 1.0 / 3.0_f64.sqrt();
+    let r1 = [s, s, s];
+    let r2 = [-s, s, s];
+    three_way_check("3D_both_off", r1, r2, 2.0);
+}
+
+// ────────────────────────────────────────────────────────────────
+// Large eccentricity
+// ────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_three_way_high_eccentricity() {
+    let r1 = [1.0, 0.0, 0.0];
+    let r2 = [0.0, 7.0, 0.0];
+    three_way_check("ecc_r7", r1, r2, 2.0);
+}

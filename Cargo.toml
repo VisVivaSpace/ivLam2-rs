@@ -14,6 +14,11 @@ build = "build.rs"
 
 [dev-dependencies]
 approx = "0.5"
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "solver_benchmark"
+harness = false
 
 [build-dependencies]
 cc = { version = "1", optional = true }

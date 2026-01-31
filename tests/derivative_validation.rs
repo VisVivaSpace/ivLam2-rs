@@ -202,6 +202,47 @@ fn test_jacobian_energy_consistency() {
 }
 
 // ────────────────────────────────────────────────────────────────
+// Additional finite-difference validation (wider range)
+// ────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_jacobian_fd_small_angle() {
+    let angle = 10.0_f64.to_radians();
+    check_jacobian_against_fd("10°", [1.0, 0.0, 0.0], [angle.cos(), angle.sin(), 0.0], angle, 1.0);
+}
+
+#[test]
+fn test_jacobian_fd_large_angle() {
+    let angle = 160.0_f64.to_radians();
+    check_jacobian_against_fd("160°", [1.0, 0.0, 0.0], [angle.cos(), angle.sin(), 0.0], 2.0, 1.0);
+}
+
+#[test]
+fn test_jacobian_fd_radius_ratio_3() {
+    check_jacobian_against_fd("ratio_3", [1.0, 0.0, 0.0], [0.0, 3.0, 0.0], 3.0, 1.0);
+}
+
+#[test]
+fn test_jacobian_fd_radius_ratio_05() {
+    check_jacobian_against_fd("ratio_0.5", [1.0, 0.0, 0.0], [0.0, 0.5, 0.0], 1.0, 1.0);
+}
+
+#[test]
+fn test_jacobian_fd_3d_inclined() {
+    check_jacobian_against_fd("3D_inc", [1.0, 0.0, 0.0], [0.0, 0.866, 0.5], PI / 2.0, 1.0);
+}
+
+#[test]
+fn test_jacobian_fd_long_tof() {
+    check_jacobian_against_fd("long_tof", [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 10.0, 1.0);
+}
+
+#[test]
+fn test_jacobian_fd_high_eccentricity() {
+    check_jacobian_against_fd("ecc_r7", [1.0, 0.0, 0.0], [0.0, 7.0, 0.0], 2.0, 1.0);
+}
+
+// ────────────────────────────────────────────────────────────────
 // Fortran ivLam comparison (feature-gated)
 // ────────────────────────────────────────────────────────────────
 
@@ -258,5 +299,37 @@ mod ivlam_comparison {
     #[test]
     fn test_vs_ivlam_3d() {
         check_vs_ivlam("3D", [1.0, 0.0, 0.0], [0.0, 0.8, 0.6], PI / 2.0);
+    }
+
+    #[test]
+    fn test_vs_ivlam_small_angle() {
+        let angle = 10.0_f64.to_radians();
+        check_vs_ivlam("10°", [1.0, 0.0, 0.0], [angle.cos(), angle.sin(), 0.0], angle);
+    }
+
+    #[test]
+    fn test_vs_ivlam_large_angle() {
+        let angle = 160.0_f64.to_radians();
+        check_vs_ivlam("160°", [1.0, 0.0, 0.0], [angle.cos(), angle.sin(), 0.0], 2.0);
+    }
+
+    #[test]
+    fn test_vs_ivlam_diff_radii() {
+        check_vs_ivlam("diff_r", [1.0, 0.0, 0.0], [0.0, 3.0, 0.0], 3.0);
+    }
+
+    #[test]
+    fn test_vs_ivlam_hyperbolic() {
+        check_vs_ivlam("hyper", [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 0.1);
+    }
+
+    #[test]
+    fn test_vs_ivlam_long_tof() {
+        check_vs_ivlam("long_tof", [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], 10.0);
+    }
+
+    #[test]
+    fn test_vs_ivlam_3d_inclined() {
+        check_vs_ivlam("3D_inc", [1.0, 0.0, 0.0], [0.0, 0.866, 0.5], PI / 2.0);
     }
 }

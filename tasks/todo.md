@@ -1,37 +1,54 @@
-# ivLam2-rs: Testing & First Derivative Implementation
+# ivLam2-rs: Expanded Testing, Benchmarks & Coefficient File Integration
 
-## Phase 0: Documentation & Attribution Updates
-- [x] 0.1 Update CLAUDE.md — add PDF reference to Notes Directory
-- [x] 0.2 Update README.md — add UT Austin link in Acknowledgments
+## Phase 1: Expand Gooding Cross-Validation Tests
 
-## Phase 1: Fix Failing Tests & Improve Coverage
-- [x] 1.1 Fix `test_w_ellipse_basic` — near-zero series coefficients A0–A8 were 2x too large; also fixed k^7 coefficient (-8/35 not -2/7)
-- [x] 1.2 Fix `test_solve_lambert_hyperbolic` — clamp k_initial to [k_left, k_right] after bounds computed
-- [x] 1.3 Tighten `test_solve_lambert_90_degree` tolerance from ±0.1 to 1e-10
-- [x] 1.4 Add unit tests per module (stumpff: 8 new, geometry: 6 new, solver: 4 new, velocity: 2 new)
-- [x] 1.5 Round-trip integration tests (tests/round_trip.rs with Kepler propagator — 8 tests)
-- [ ] 1.6 Planetary data tests — deferred (requires SPICE kernels)
+### 1.1 Add wide-range test cases to `tests/cross_validate_gooding.rs`
+- [x] Angle sweep: 5°, 15°, 25°, 30°, 60°, 75°, 100°, 110°, 140°, 150°, 160°
+- [x] Radius ratio sweep (90° transfer): r2/r1 = 0.3, 0.5, 0.7, 1.5, 2.0, 3.0, 5.0
+- [x] TOF variation (fixed 90° geometry): TOF = 0.2, 0.5, 1.0, 2.0, 5.0, 10.0
+- [x] 3D transfers: several out-of-plane cases (30°, 60° inclination, both-off-plane, different radii inclined)
+- [x] Physical units: Earth-Mars, LEO-to-MEO, Sun-centered Venus
+- [x] Large eccentricity: r2/r1 = 7, 10, and 6 at 60°
 
-## Phase 2: C Gooding Solver Cross-Validation
-- [ ] 2.1 Set up C FFI build (csrc/, build.rs, gooding-ffi feature)
-- [ ] 2.2 Safe Rust wrapper (tests/common/gooding.rs)
-- [ ] 2.3 Systematic cross-validation tests (tests/cross_validate_gooding.rs)
+**DO NOT modify:** `src/` files, existing test cases, `CROSS_TOL` constant
 
-## Phase 3: Fortran ivLam Cross-Validation
-- [ ] 3.1 Build Fortran shared library (fortran/, ivlam-ffi feature)
-- [ ] 3.2 Safe Rust wrappers (tests/common/ivlam_ffi.rs)
-- [ ] 3.3 Three-way cross-validation tests
-- [ ] 3.4 Capture derivative reference values
+### 1.2 Speed benchmark: Rust vercosine vs C Gooding
+- [x] Create `benches/solver_benchmark.rs` using Criterion
+- [x] Add criterion dependency + `[[bench]]` to `Cargo.toml`
+- [x] Benchmark: single solve (90°), batch of 100 (angle sweep), LEO→GEO, hyperbolic
 
-## Phase 4: First Derivative Support
-- [ ] 4.1 GeometryPartials struct in geometry.rs
-- [ ] 4.2 dF_dtau helper in solver.rs
-- [ ] 4.3 Implement compute_first_order in sensitivities.rs
-- [ ] 4.4 Add solve_lambert_with_jacobian to solver.rs
-- [ ] 4.5 Export new API from lib.rs
-- [ ] 4.6 Validation tests (finite-diff, Fortran comparison, symmetry, energy)
+**DO NOT modify:** `src/` files
 
-## Phase 5: Documentation & README Update
-- [ ] 5.1 Update README.md with new API docs
-- [ ] 5.2 Update CLAUDE.md with new architecture
-- [ ] 5.3 Update lib.rs doc comments
+---
+
+## Phase 2: Expand Fortran Cross-Validation & Fuzz Testing
+
+### 2.1 Add wide-range test cases to Fortran cross-validation
+- [x] Add cases to `tests/cross_validate_three_way.rs` (angle sweep, radius ratio sweep, TOF sweep, 3D, high eccentricity)
+- [x] Add wider derivative cases to `tests/derivative_validation.rs` (10°, 160°, ratio 3, ratio 0.5, 3D inclined, long TOF, high eccentricity)
+- [x] Add ivLam-only derivative tests (small angle, large angle, diff radii, hyperbolic, long TOF, 3D inclined)
+
+### 2.2 Fuzz testing with randomized inputs
+- [x] Create `tests/fuzz_validation.rs` (behind `ivlam-ffi` feature)
+- [x] Simple inline seeded PRNG (xoshiro256**, no external dependency)
+- [x] 1000 random velocity cases, Rust vs Fortran ivLam
+- [x] 100 random Jacobian cases, Rust vs Fortran ivLam
+
+---
+
+## Phase 3: Coefficient File Integration
+
+### 3.1 Analysis and decision
+- [ ] Confirm approach: Option A+C (feature-gated const arrays)
+
+### 3.2 Write Fortran .bin parser
+- [ ] Create `tools/parse_coefficients.rs`
+
+### 3.3 Implement interpolation-based initial guess
+- [ ] Create `src/interpolation.rs`
+- [ ] Create `src/coefficients.rs` (generated)
+- [ ] Modify `src/solver.rs` with `#[cfg(feature = "interpolation")]` branch
+- [ ] Update `src/lib.rs` and `Cargo.toml`
+
+### 3.4 Validate interpolation accuracy
+- [ ] Create `tests/interpolation_validation.rs`
