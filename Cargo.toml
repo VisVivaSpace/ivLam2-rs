@@ -24,3 +24,5 @@ default = []
 sensitivities = []
 # Enable C Gooding Lambert solver for cross-validation tests
 gooding-ffi = ["cc"]
+# Enable Fortran ivLam solver for cross-validation tests (requires pre-built libivlam.dylib)
+ivlam-ffi = []
