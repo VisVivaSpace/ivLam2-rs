@@ -72,13 +72,180 @@ const K_RANGE_LEFT_MULTI_REV: f64 = -SQRT_2 + K_MARGIN;
 /// Maximum step size for multi-rev safeguard
 const MAX_K_STEP_MULTI_REV: f64 = 0.5;
 
+/// Validate inputs common to all solver entry points.
+///
+/// Checks that mu is finite and positive, that position vectors contain
+/// only finite values, that TOF is positive, and that positions are distinct.
+fn validate_inputs(
+    r1: &[f64; 3],
+    r2: &[f64; 3],
+    tof: f64,
+    mu: f64,
+) -> Result<(), LambertError> {
+    // Validate mu
+    if !mu.is_finite() || mu <= 0.0 {
+        return Err(LambertError::InvalidInput(
+            "mu must be finite and positive".to_string(),
+        ));
+    }
+
+    // Validate TOF
+    if tof <= 0.0 {
+        return Err(LambertError::InvalidTimeOfFlight);
+    }
+
+    // Validate position vectors are finite
+    let r1_mag = (r1[0].powi(2) + r1[1].powi(2) + r1[2].powi(2)).sqrt();
+    let r2_mag = (r2[0].powi(2) + r2[1].powi(2) + r2[2].powi(2)).sqrt();
+    if !r1_mag.is_finite() || r1_mag == 0.0 {
+        return Err(LambertError::InvalidInput(
+            "r1 must be finite and non-zero".to_string(),
+        ));
+    }
+    if !r2_mag.is_finite() || r2_mag == 0.0 {
+        return Err(LambertError::InvalidInput(
+            "r2 must be finite and non-zero".to_string(),
+        ));
+    }
+    if !tof.is_finite() {
+        return Err(LambertError::InvalidInput(
+            "tof must be finite".to_string(),
+        ));
+    }
+
+    // Check for identical positions
+    let dr = [r2[0] - r1[0], r2[1] - r1[1], r2[2] - r1[2]];
+    let dr_mag = (dr[0].powi(2) + dr[1].powi(2) + dr[2].powi(2)).sqrt();
+    if dr_mag < 1e-14 * r1_mag {
+        return Err(LambertError::IdenticalPositions);
+    }
+
+    Ok(())
+}
+
+/// Core solver: validates inputs, iterates to convergence, and returns the
+/// converged SolverState, Geometry, and final residual for downstream use.
+fn solve_lambert_core(
+    r1: &[f64; 3],
+    r2: &[f64; 3],
+    tof: f64,
+    mu: f64,
+    direction: Direction,
+    n_rev: i32,
+) -> Result<(SolverState, Geometry, f64), LambertError> {
+    validate_inputs(r1, r2, tof, mu)?;
+
+    let geom = Geometry::new(r1, r2, tof, mu, direction);
+
+    if geom.n_pi_rev_info == NpiRevInfo::ExactHalfRev {
+        return Err(LambertError::HalfRevolutionSingularity);
+    }
+
+    let n_abs = n_rev.abs() as usize;
+    let n_is_zero = n_rev == 0;
+    let two_pi_n = TWO_PI * n_abs as f64;
+
+    // Determine k bounds
+    let (k_left, k_right) = if n_is_zero {
+        let k_right = if geom.tau > 0.0 {
+            (1.0 / geom.tau) * (1.0 - K_MARGIN)
+        } else {
+            f64::MAX
+        };
+        (K_RANGE_LEFT_ZERO_REV, k_right)
+    } else {
+        (K_RANGE_LEFT_MULTI_REV, K_RANGE_RIGHT_MULTI_REV)
+    };
+
+    let k_initial = compute_initial_guess(&geom, n_is_zero, n_rev);
+    let k_initial = k_initial.clamp(k_left + K_MARGIN, k_right - K_MARGIN);
+
+    let mut state = SolverState::new(k_initial, geom.tau);
+    let mut residual = f64::MAX;
+
+    for iter in 0..MAX_ITERATIONS {
+        state.iterations = iter + 1;
+        let k_last = state.k_sol;
+
+        state.dw = compute_w_and_derivatives(state.k_sol, n_is_zero, two_pi_n, 3);
+        state.w = state.dw[0];
+
+        let (func, dfunc) = compute_tof_function(&state, &geom);
+        residual = func.abs();
+
+        if residual < 1e-14 * geom.tof_by_s.max(1.0) {
+            break;
+        }
+
+        let dk = compute_correction(func, &dfunc, n_is_zero);
+        let mut k_new = state.k_sol + dk;
+
+        if k_new < k_left {
+            k_new = 0.5 * (k_last + k_left);
+        } else if k_new > k_right {
+            k_new = 0.5 * (k_last + k_right);
+        }
+
+        state.k_sol = k_new;
+        state.update_p(geom.tau);
+
+        if (state.k_sol - k_last).abs() < f64::EPSILON * state.k_sol.abs().max(1.0) {
+            break;
+        }
+    }
+
+    // The fallback threshold (1e-10) is intentionally looser than the iteration
+    // convergence criterion (1e-14 * max(T/S,1)). When the solver exhausts all
+    // iterations, a residual of ~1e-11 still represents a physically accurate
+    // solution (sub-mm/s velocity error in practice). Rejecting it would be
+    // overly conservative for edge cases that converge slowly (e.g., near-parabolic).
+    if state.iterations >= MAX_ITERATIONS && residual > 1e-10 {
+        return Err(LambertError::ConvergenceFailed {
+            iterations: state.iterations,
+            residual,
+        });
+    }
+
+    Ok((state, geom, residual))
+}
+
+/// Build the LambertSolution from the converged state.
+fn build_solution(
+    state: &SolverState,
+    geom: &Geometry,
+    n_rev: i32,
+    residual: f64,
+) -> LambertSolution {
+    let (v1, v2) = compute_velocities(state, geom);
+
+    let warning = match geom.n_pi_rev_info {
+        NpiRevInfo::NearHalfRev => Some(
+            "Near half-revolution transfer - velocity accuracy may be degraded".to_string(),
+        ),
+        NpiRevInfo::NearFullRev => Some(
+            "Near full-revolution transfer - close to degenerate case".to_string(),
+        ),
+        _ => None,
+    };
+
+    LambertSolution {
+        v1,
+        v2,
+        n_rev,
+        iterations: state.iterations,
+        residual,
+        k: state.k_sol,
+        warning,
+    }
+}
+
 /// Solve the Lambert problem for zero or single-N revolutions.
 ///
 /// # Arguments
 /// * `r1` - Initial position vector [x, y, z]
 /// * `r2` - Final position vector [x, y, z]
 /// * `tof` - Time of flight (must be > 0)
-/// * `mu` - Gravitational parameter
+/// * `mu` - Gravitational parameter (must be finite and > 0)
 /// * `direction` - Transfer direction (Prograde or Retrograde)
 /// * `n_rev` - Number of complete revolutions (0 for direct transfer)
 ///
@@ -88,7 +255,7 @@ const MAX_K_STEP_MULTI_REV: f64 = 0.5;
 /// # Example
 /// ```
 /// use lambert_solver::{solve_lambert, Direction};
-/// 
+///
 /// let r1 = [1.0, 0.0, 0.0];
 /// let r2 = [0.0, 1.0, 0.0];
 /// let tof = std::f64::consts::PI / 2.0;
@@ -104,122 +271,8 @@ pub fn solve_lambert(
     direction: Direction,
     n_rev: i32,
 ) -> Result<LambertSolution, LambertError> {
-    // Input validation
-    if tof <= 0.0 {
-        return Err(LambertError::InvalidTimeOfFlight);
-    }
-    
-    // Check for identical positions
-    let dr = [r2[0] - r1[0], r2[1] - r1[1], r2[2] - r1[2]];
-    let dr_mag = (dr[0].powi(2) + dr[1].powi(2) + dr[2].powi(2)).sqrt();
-    let r1_mag = (r1[0].powi(2) + r1[1].powi(2) + r1[2].powi(2)).sqrt();
-    if dr_mag < 1e-14 * r1_mag {
-        return Err(LambertError::IdenticalPositions);
-    }
-    
-    // Compute geometry
-    let geom = Geometry::new(r1, r2, tof, mu, direction);
-    
-    // Check for half-rev singularity
-    if geom.n_pi_rev_info == NpiRevInfo::ExactHalfRev {
-        return Err(LambertError::HalfRevolutionSingularity);
-    }
-    
-    // For n_rev = 0, solve directly
-    // For n_rev != 0, we need to check if solution exists
-    let n_abs = n_rev.abs() as usize;
-    let n_is_zero = n_rev == 0;
-    let two_pi_n = TWO_PI * n_abs as f64;
-    
-    // Determine k bounds
-    let (k_left, k_right) = if n_is_zero {
-        let k_right = if geom.tau > 0.0 {
-            (1.0 / geom.tau) * (1.0 - K_MARGIN)
-        } else {
-            f64::MAX
-        };
-        (K_RANGE_LEFT_ZERO_REV, k_right)
-    } else {
-        (K_RANGE_LEFT_MULTI_REV, K_RANGE_RIGHT_MULTI_REV)
-    };
-
-    // Get initial guess and clamp to valid range
-    let k_initial = compute_initial_guess(&geom, n_is_zero, n_rev);
-    let k_initial = k_initial.clamp(k_left + K_MARGIN, k_right - K_MARGIN);
-
-    // Create initial solver state
-    let mut state = SolverState::new(k_initial, geom.tau);
-    
-    // Main iteration loop
-    let mut k_last = state.k_sol;
-    let mut residual = f64::MAX;
-    
-    for iter in 0..MAX_ITERATIONS {
-        state.iterations = iter + 1;
-        k_last = state.k_sol;
-        
-        // Compute W and its derivatives
-        state.dw = compute_w_and_derivatives(state.k_sol, n_is_zero, two_pi_n, 3);
-        state.w = state.dw[0];
-        
-        // Compute the TOF function and its derivatives
-        let (func, dfunc) = compute_tof_function(&state, &geom);
-        residual = func.abs();
-        
-        // Check for convergence
-        if residual < 1e-14 * geom.tof_by_s.max(1.0) {
-            break;
-        }
-        
-        // Compute correction using Newton-Raphson (with higher-order terms)
-        let dk = compute_correction(func, &dfunc, n_is_zero);
-        
-        // Apply correction with safeguards
-        let mut k_new = state.k_sol + dk;
-        
-        // Bound checking
-        if k_new < k_left {
-            k_new = 0.5 * (k_last + k_left);
-        } else if k_new > k_right {
-            k_new = 0.5 * (k_last + k_right);
-        }
-        
-        state.k_sol = k_new;
-        state.update_p(geom.tau);
-        
-        // Check for lack of improvement
-        if (state.k_sol - k_last).abs() < f64::EPSILON * state.k_sol.abs().max(1.0) {
-            break;
-        }
-    }
-    
-    // Check convergence
-    if state.iterations >= MAX_ITERATIONS && residual > 1e-10 {
-        return Err(LambertError::ConvergenceFailed {
-            iterations: state.iterations,
-            residual,
-        });
-    }
-    
-    // Compute velocities
-    let (v1, v2) = compute_velocities(&state, &geom);
-    
-    // Build warning message if needed
-    let warning = match geom.n_pi_rev_info {
-        NpiRevInfo::NearHalfRev => Some("Near half-revolution transfer - velocity accuracy may be degraded".to_string()),
-        NpiRevInfo::NearFullRev => Some("Near full-revolution transfer - close to degenerate case".to_string()),
-        _ => None,
-    };
-    
-    Ok(LambertSolution {
-        v1,
-        v2,
-        n_rev,
-        iterations: state.iterations,
-        residual,
-        k: state.k_sol,
-        warning,
-    })
+    let (state, geom, residual) = solve_lambert_core(r1, r2, tof, mu, direction, n_rev)?;
+    Ok(build_solution(&state, &geom, n_rev, residual))
 }
 
 /// Solve for both multi-revolution solutions (short and long period).
@@ -280,104 +333,9 @@ pub fn solve_lambert_with_jacobian(
     direction: Direction,
     n_rev: i32,
 ) -> Result<(LambertSolution, LambertSensitivities), LambertError> {
-    // Input validation
-    if tof <= 0.0 {
-        return Err(LambertError::InvalidTimeOfFlight);
-    }
-
-    let dr = [r2[0] - r1[0], r2[1] - r1[1], r2[2] - r1[2]];
-    let dr_mag = (dr[0].powi(2) + dr[1].powi(2) + dr[2].powi(2)).sqrt();
-    let r1_mag = (r1[0].powi(2) + r1[1].powi(2) + r1[2].powi(2)).sqrt();
-    if dr_mag < 1e-14 * r1_mag {
-        return Err(LambertError::IdenticalPositions);
-    }
-
-    let geom = Geometry::new(r1, r2, tof, mu, direction);
-
-    if geom.n_pi_rev_info == NpiRevInfo::ExactHalfRev {
-        return Err(LambertError::HalfRevolutionSingularity);
-    }
-
-    let n_abs = n_rev.abs() as usize;
-    let n_is_zero = n_rev == 0;
-    let two_pi_n = TWO_PI * n_abs as f64;
-
-    let (k_left, k_right) = if n_is_zero {
-        let k_right = if geom.tau > 0.0 {
-            (1.0 / geom.tau) * (1.0 - K_MARGIN)
-        } else {
-            f64::MAX
-        };
-        (K_RANGE_LEFT_ZERO_REV, k_right)
-    } else {
-        (K_RANGE_LEFT_MULTI_REV, K_RANGE_RIGHT_MULTI_REV)
-    };
-
-    let k_initial = compute_initial_guess(&geom, n_is_zero, n_rev);
-    let k_initial = k_initial.clamp(k_left + K_MARGIN, k_right - K_MARGIN);
-
-    let mut state = SolverState::new(k_initial, geom.tau);
-    let mut residual = f64::MAX;
-
-    for iter in 0..MAX_ITERATIONS {
-        state.iterations = iter + 1;
-        let k_last = state.k_sol;
-
-        state.dw = compute_w_and_derivatives(state.k_sol, n_is_zero, two_pi_n, 3);
-        state.w = state.dw[0];
-
-        let (func, dfunc) = compute_tof_function(&state, &geom);
-        residual = func.abs();
-
-        if residual < 1e-14 * geom.tof_by_s.max(1.0) {
-            break;
-        }
-
-        let dk = compute_correction(func, &dfunc, n_is_zero);
-        let mut k_new = state.k_sol + dk;
-
-        if k_new < k_left {
-            k_new = 0.5 * (k_last + k_left);
-        } else if k_new > k_right {
-            k_new = 0.5 * (k_last + k_right);
-        }
-
-        state.k_sol = k_new;
-        state.update_p(geom.tau);
-
-        if (state.k_sol - k_last).abs() < f64::EPSILON * state.k_sol.abs().max(1.0) {
-            break;
-        }
-    }
-
-    if state.iterations >= MAX_ITERATIONS && residual > 1e-10 {
-        return Err(LambertError::ConvergenceFailed {
-            iterations: state.iterations,
-            residual,
-        });
-    }
-
-    let (v1, v2) = compute_velocities(&state, &geom);
-
-    let warning = match geom.n_pi_rev_info {
-        NpiRevInfo::NearHalfRev => Some("Near half-revolution transfer - velocity accuracy may be degraded".to_string()),
-        NpiRevInfo::NearFullRev => Some("Near full-revolution transfer - close to degenerate case".to_string()),
-        _ => None,
-    };
-
-    // Compute Jacobian using the converged state
+    let (state, geom, residual) = solve_lambert_core(r1, r2, tof, mu, direction, n_rev)?;
     let sens = LambertSensitivities::compute_first_order(&state, &geom);
-
-    let solution = LambertSolution {
-        v1,
-        v2,
-        n_rev,
-        iterations: state.iterations,
-        residual,
-        k: state.k_sol,
-        warning,
-    };
-
+    let solution = build_solution(&state, &geom, n_rev, residual);
     Ok((solution, sens))
 }
 
@@ -399,102 +357,9 @@ pub fn solve_lambert_with_hessian(
     direction: Direction,
     n_rev: i32,
 ) -> Result<(LambertSolution, LambertSensitivities), LambertError> {
-    if tof <= 0.0 {
-        return Err(LambertError::InvalidTimeOfFlight);
-    }
-
-    let dr = [r2[0] - r1[0], r2[1] - r1[1], r2[2] - r1[2]];
-    let dr_mag = (dr[0].powi(2) + dr[1].powi(2) + dr[2].powi(2)).sqrt();
-    let r1_mag = (r1[0].powi(2) + r1[1].powi(2) + r1[2].powi(2)).sqrt();
-    if dr_mag < 1e-14 * r1_mag {
-        return Err(LambertError::IdenticalPositions);
-    }
-
-    let geom = Geometry::new(r1, r2, tof, mu, direction);
-
-    if geom.n_pi_rev_info == NpiRevInfo::ExactHalfRev {
-        return Err(LambertError::HalfRevolutionSingularity);
-    }
-
-    let n_abs = n_rev.abs() as usize;
-    let n_is_zero = n_rev == 0;
-    let two_pi_n = TWO_PI * n_abs as f64;
-
-    let (k_left, k_right) = if n_is_zero {
-        let k_right = if geom.tau > 0.0 {
-            (1.0 / geom.tau) * (1.0 - K_MARGIN)
-        } else {
-            f64::MAX
-        };
-        (K_RANGE_LEFT_ZERO_REV, k_right)
-    } else {
-        (K_RANGE_LEFT_MULTI_REV, K_RANGE_RIGHT_MULTI_REV)
-    };
-
-    let k_initial = compute_initial_guess(&geom, n_is_zero, n_rev);
-    let k_initial = k_initial.clamp(k_left + K_MARGIN, k_right - K_MARGIN);
-
-    let mut state = SolverState::new(k_initial, geom.tau);
-    let mut residual = f64::MAX;
-
-    for iter in 0..MAX_ITERATIONS {
-        state.iterations = iter + 1;
-        let k_last = state.k_sol;
-
-        state.dw = compute_w_and_derivatives(state.k_sol, n_is_zero, two_pi_n, 3);
-        state.w = state.dw[0];
-
-        let (func, dfunc) = compute_tof_function(&state, &geom);
-        residual = func.abs();
-
-        if residual < 1e-14 * geom.tof_by_s.max(1.0) {
-            break;
-        }
-
-        let dk = compute_correction(func, &dfunc, n_is_zero);
-        let mut k_new = state.k_sol + dk;
-
-        if k_new < k_left {
-            k_new = 0.5 * (k_last + k_left);
-        } else if k_new > k_right {
-            k_new = 0.5 * (k_last + k_right);
-        }
-
-        state.k_sol = k_new;
-        state.update_p(geom.tau);
-
-        if (state.k_sol - k_last).abs() < f64::EPSILON * state.k_sol.abs().max(1.0) {
-            break;
-        }
-    }
-
-    if state.iterations >= MAX_ITERATIONS && residual > 1e-10 {
-        return Err(LambertError::ConvergenceFailed {
-            iterations: state.iterations,
-            residual,
-        });
-    }
-
-    let (v1, v2) = compute_velocities(&state, &geom);
-
-    let warning = match geom.n_pi_rev_info {
-        NpiRevInfo::NearHalfRev => Some("Near half-revolution transfer - velocity accuracy may be degraded".to_string()),
-        NpiRevInfo::NearFullRev => Some("Near full-revolution transfer - close to degenerate case".to_string()),
-        _ => None,
-    };
-
+    let (state, geom, residual) = solve_lambert_core(r1, r2, tof, mu, direction, n_rev)?;
     let sens = LambertSensitivities::compute_with_hessians(&state, &geom);
-
-    let solution = LambertSolution {
-        v1,
-        v2,
-        n_rev,
-        iterations: state.iterations,
-        residual,
-        k: state.k_sol,
-        warning,
-    };
-
+    let solution = build_solution(&state, &geom, n_rev, residual);
     Ok((solution, sens))
 }
 
@@ -859,5 +724,77 @@ mod tests {
             }
             Err(e) => panic!("Unexpected error: {:?}", e),
         }
+    }
+
+    #[test]
+    fn test_error_invalid_mu() {
+        let r1 = [1.0, 0.0, 0.0];
+        let r2 = [0.0, 1.0, 0.0];
+        let tof = 1.0;
+
+        // mu = 0
+        let result = solve_lambert(&r1, &r2, tof, 0.0, Direction::Prograde, 0);
+        assert!(matches!(result, Err(LambertError::InvalidInput(_))));
+
+        // mu < 0
+        let result = solve_lambert(&r1, &r2, tof, -1.0, Direction::Prograde, 0);
+        assert!(matches!(result, Err(LambertError::InvalidInput(_))));
+
+        // mu = NaN
+        let result = solve_lambert(&r1, &r2, tof, f64::NAN, Direction::Prograde, 0);
+        assert!(matches!(result, Err(LambertError::InvalidInput(_))));
+
+        // mu = Inf
+        let result = solve_lambert(&r1, &r2, tof, f64::INFINITY, Direction::Prograde, 0);
+        assert!(matches!(result, Err(LambertError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_error_invalid_position_vectors() {
+        let r1 = [1.0, 0.0, 0.0];
+        let r2 = [0.0, 1.0, 0.0];
+        let mu = 1.0;
+        let tof = 1.0;
+
+        // r1 with NaN
+        let r1_nan = [f64::NAN, 0.0, 0.0];
+        let result = solve_lambert(&r1_nan, &r2, tof, mu, Direction::Prograde, 0);
+        assert!(matches!(result, Err(LambertError::InvalidInput(_))));
+
+        // r2 with Inf
+        let r2_inf = [f64::INFINITY, 0.0, 0.0];
+        let result = solve_lambert(&r1, &r2_inf, tof, mu, Direction::Prograde, 0);
+        assert!(matches!(result, Err(LambertError::InvalidInput(_))));
+
+        // Zero position vector
+        let r_zero = [0.0, 0.0, 0.0];
+        let result = solve_lambert(&r_zero, &r2, tof, mu, Direction::Prograde, 0);
+        assert!(matches!(result, Err(LambertError::InvalidInput(_))));
+
+        // tof = NaN
+        let result = solve_lambert(&r1, &r2, f64::NAN, mu, Direction::Prograde, 0);
+        assert!(matches!(result, Err(LambertError::InvalidInput(_))));
+    }
+
+    #[test]
+    fn test_validation_applies_to_all_entry_points() {
+        // Verify that all three public functions reject invalid mu
+        let r1 = [1.0, 0.0, 0.0];
+        let r2 = [0.0, 1.0, 0.0];
+        let tof = 1.0;
+        let bad_mu = -1.0;
+
+        assert!(matches!(
+            solve_lambert(&r1, &r2, tof, bad_mu, Direction::Prograde, 0),
+            Err(LambertError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            solve_lambert_with_jacobian(&r1, &r2, tof, bad_mu, Direction::Prograde, 0),
+            Err(LambertError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            solve_lambert_with_hessian(&r1, &r2, tof, bad_mu, Direction::Prograde, 0),
+            Err(LambertError::InvalidInput(_))
+        ));
     }
 }

@@ -14,7 +14,9 @@ const ZERO_BAND_SQ: f64 = ZERO_BAND * ZERO_BAND;
 /// Threshold for series solution near k = sqrt(2) (parabola)
 const PARABOLA_BAND: f64 = 0.02;
 
-/// Threshold for near k = -sqrt(2) boundary
+/// Threshold for near k = -sqrt(2) boundary. Narrower than the other bands
+/// (0.01 vs 0.02) because the series expansion here has a smaller convergence
+/// radius due to the square-root singularity at k = -sqrt(2).
 const K_CLOSE_TO_M_SQRT2: f64 = 0.01;
 
 const SQRT_2: f64 = std::f64::consts::SQRT_2;
@@ -226,7 +228,11 @@ fn compute_w_general(
             let kps2 = k + SQRT_2;
             
             if kps2 < K_CLOSE_TO_M_SQRT2 {
-                // Very close to k = -sqrt(2) boundary - use series for precision
+                // Very close to k = -sqrt(2) boundary - use series for precision.
+                // Coefficients below are from a Taylor expansion of the W function
+                // about k = -sqrt(2) in powers of (k + sqrt(2)), derived via
+                // Maple/Mathematica in the Fortran ivLam reference implementation
+                // (see ivLamRuntimeV2p50, subroutine getD4W, near-boundary branch).
                 let tn_p = TWO_PI + two_pi_n;
                 let tb1 = kps2 * kps2;
                 let tb2 = kps2.sqrt();

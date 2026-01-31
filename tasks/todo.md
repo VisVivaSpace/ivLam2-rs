@@ -131,7 +131,57 @@
 
 ---
 
+## Phase 6: Code Review Fixes
+
+### 6.1 H1 + H2 + M1: Input validation and deduplication
+- [x] Extract shared `validate_inputs()` helper that validates mu > 0, finite checks on r1/r2, TOF > 0, identical positions
+- [x] Extract shared `solve_lambert_core()` helper that does validation + geometry + k-bounds + iteration
+- [x] Extract shared `build_solution()` helper for building the LambertSolution
+- [x] Refactor `solve_lambert()`, `solve_lambert_with_jacobian()`, `solve_lambert_with_hessian()` to use the helpers
+- [x] Add tests for mu <= 0, mu = NaN, mu = Inf, r1 with NaN, r2 with Inf, zero position, NaN tof
+
+**DO NOT modify:** `geometry.rs`, `stumpff.rs`, `velocity.rs`, `sensitivities.rs`, `interpolation.rs`
+
+### 6.2 M3: Document convergence threshold relationship
+- [x] Add comment explaining why the post-loop fallback threshold (1e-10) differs from the iteration convergence criterion (1e-14)
+
+### 6.3 M4: Document geometry constants
+- [x] Add inline comments to `NEAR_N_PI_REV_WARNING`, `ALTERNATE_TAU_THRESHOLD`, `SQRT_TINY`, `FOUR_RT_TINY`, `TOF_BY_S_HUGE_BOUNDARY`
+
+### 6.4 M2: Document stumpff.rs coefficients
+- [x] Add source comment to near-k=-sqrt(2) series coefficients in `compute_w_general()`
+- [x] Add comment explaining `K_CLOSE_TO_M_SQRT2` narrower band width
+
+### 6.5 M5: Document intentional clamping in interpolation
+- [x] Add comment at y-clamp sites in `interpolate_initial_k_zero_rev()` and `interpolate_initial_k_multi_rev()`
+
+---
+
 ## Review
+
+### Phase 6 Summary — Code Review Fixes
+
+**Refactoring (H1+H2+M1):**
+Extracted three shared helpers in `solver.rs`:
+- `validate_inputs()` — validates mu > 0 and finite, position vectors finite and non-zero, TOF finite and positive, non-identical positions. This addresses H1 (missing mu validation) and H2 (no NaN/Inf checks).
+- `solve_lambert_core()` — does validation + geometry + half-rev check + k-bounds + initial guess + Newton-Raphson iteration + convergence check. Returns `(SolverState, Geometry, residual)`.
+- `build_solution()` — computes velocities, builds warning string, assembles `LambertSolution`.
+
+The three public functions (`solve_lambert`, `solve_lambert_with_jacobian`, `solve_lambert_with_hessian`) are now 3-6 line thin wrappers that call `solve_lambert_core()`, optionally compute sensitivities, and call `build_solution()`. This eliminates the M1 duplication (~180 lines of repeated code removed).
+
+**New tests:** 3 tests added — `test_error_invalid_mu` (mu=0, mu<0, mu=NaN, mu=Inf), `test_error_invalid_position_vectors` (r1 NaN, r2 Inf, r=0, tof NaN), `test_validation_applies_to_all_entry_points` (verifies all 3 public APIs reject bad mu).
+
+**Documentation (M2-M5):**
+- M2: Added source comment to stumpff.rs near-k=-sqrt(2) coefficients (Taylor expansion from Fortran ivLam reference)
+- M3: Added comment to convergence fallback threshold explaining the 1e-10 vs 1e-14 relationship
+- M4: Added inline comments to all 5 geometry threshold constants explaining their numerical motivation
+- M5: Added comments at both y-clamp sites in interpolation.rs explaining why clamping is safe
+
+**Files modified:** `src/solver.rs` (structural refactor + tests), `src/geometry.rs` (comments only), `src/stumpff.rs` (comments only), `src/interpolation.rs` (comments only), `tasks/todo.md`
+
+**Test results:** 88 tests pass (41 unit + 47 integration), clippy clean (pre-existing warnings only).
+
+---
 
 ### Phase 4.5 Summary — Hessian Bug Fixes
 

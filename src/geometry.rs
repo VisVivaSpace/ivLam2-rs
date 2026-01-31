@@ -88,10 +88,28 @@ pub enum NpiRevInfo {
 }
 
 // Threshold constants
+
+/// Switch to log-form TOF function when T/S exceeds this value, preventing
+/// floating-point overflow in sqrt(p)*(tau + p*W) for very long transfers.
 const TOF_BY_S_HUGE_BOUNDARY: f64 = 1e4;
+
+/// Threshold on (1 ± cos_theta) for near-n*pi transfer detection.
+/// Corresponds to ~0.5° from exact half-rev or full-rev. Chosen to match
+/// the Fortran ivLam reference implementation's warning threshold.
 const NEAR_N_PI_REV_WARNING: f64 = 3.8e-5;
+
+/// When (1+cos_theta) < this threshold, use the cross-product-based formula
+/// for tau instead of the standard formula, which loses precision near theta=pi
+/// due to catastrophic cancellation in (1+cos_theta).
 const ALTERNATE_TAU_THRESHOLD: f64 = 1e-8;
-const SQRT_TINY: f64 = 1e-154; // sqrt of f64::MIN_POSITIVE approximately
+
+/// Approximately sqrt(f64::MIN_POSITIVE) ≈ 1.5e-154. When |tau| is below this,
+/// the half-rev singularity is considered exact (velocity solution is undefined).
+const SQRT_TINY: f64 = 1e-154;
+
+/// Approximately fourth_root(f64::MIN_POSITIVE) ≈ 1.2e-77. Added to the g
+/// denominator in exact half-rev cases to prevent division by zero in the
+/// Lagrange coefficient computation.
 const FOUR_RT_TINY: f64 = 1e-77;
 
 impl Geometry {

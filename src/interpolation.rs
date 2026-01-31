@@ -63,7 +63,9 @@ pub fn interpolate_initial_k_zero_rev(tau: f64, tof_by_s: f64) -> Option<f64> {
     if y < y_lo {
         return None; // TOF too small
     }
-    // Clamp y to upper bound (Fortran just clamps with a warning)
+    // Clamp y to upper bound when tof_by_s exceeds the interpolation domain.
+    // This is safe because the initial guess only needs to be "close enough" for
+    // Newton-Raphson to converge — the iteration corrects any error from clamping.
     let y = y.min(y_hi);
 
     // Step 6: Bin lookup
@@ -163,6 +165,9 @@ pub fn interpolate_initial_k_multi_rev(tau: f64, tof_by_s: f64, n_rev: i32) -> O
     let y_range = MREV_LIMS[1][1] - MREV_LIMS[0][1];
     let y_lo = MREV_LIMS[0][1] + LIMS_NUDGE_EPS * y_range;
     let y_hi = MREV_LIMS[1][1] - LIMS_NUDGE_EPS * y_range;
+    // Clamp y to interpolation bounds. Safe because the initial guess only
+    // needs to be "close enough" for Newton-Raphson — iteration corrects any
+    // error from boundary clamping.
     let y = y.clamp(y_lo, y_hi);
 
     // Step 8: Get y bin (dimension 2)
