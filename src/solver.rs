@@ -381,6 +381,123 @@ pub fn solve_lambert_with_jacobian(
     Ok((solution, sens))
 }
 
+/// Solve Lambert's problem and compute both the Jacobian and Hessians.
+///
+/// Returns the velocity solution, the 6×7 Jacobian, and the 6 symmetric 7×7 Hessian
+/// matrices ∂²z_i/∂y_j∂y_l. This is the full second-order sensitivity computation.
+///
+/// # Arguments
+/// Same as [`solve_lambert`].
+///
+/// # Returns
+/// `Ok((LambertSolution, LambertSensitivities))` where `sensitivities.hessians` is `Some`.
+pub fn solve_lambert_with_hessian(
+    r1: &[f64; 3],
+    r2: &[f64; 3],
+    tof: f64,
+    mu: f64,
+    direction: Direction,
+    n_rev: i32,
+) -> Result<(LambertSolution, LambertSensitivities), LambertError> {
+    if tof <= 0.0 {
+        return Err(LambertError::InvalidTimeOfFlight);
+    }
+
+    let dr = [r2[0] - r1[0], r2[1] - r1[1], r2[2] - r1[2]];
+    let dr_mag = (dr[0].powi(2) + dr[1].powi(2) + dr[2].powi(2)).sqrt();
+    let r1_mag = (r1[0].powi(2) + r1[1].powi(2) + r1[2].powi(2)).sqrt();
+    if dr_mag < 1e-14 * r1_mag {
+        return Err(LambertError::IdenticalPositions);
+    }
+
+    let geom = Geometry::new(r1, r2, tof, mu, direction);
+
+    if geom.n_pi_rev_info == NpiRevInfo::ExactHalfRev {
+        return Err(LambertError::HalfRevolutionSingularity);
+    }
+
+    let n_abs = n_rev.abs() as usize;
+    let n_is_zero = n_rev == 0;
+    let two_pi_n = TWO_PI * n_abs as f64;
+
+    let (k_left, k_right) = if n_is_zero {
+        let k_right = if geom.tau > 0.0 {
+            (1.0 / geom.tau) * (1.0 - K_MARGIN)
+        } else {
+            f64::MAX
+        };
+        (K_RANGE_LEFT_ZERO_REV, k_right)
+    } else {
+        (K_RANGE_LEFT_MULTI_REV, K_RANGE_RIGHT_MULTI_REV)
+    };
+
+    let k_initial = compute_initial_guess(&geom, n_is_zero, n_rev);
+    let k_initial = k_initial.clamp(k_left + K_MARGIN, k_right - K_MARGIN);
+
+    let mut state = SolverState::new(k_initial, geom.tau);
+    let mut residual = f64::MAX;
+
+    for iter in 0..MAX_ITERATIONS {
+        state.iterations = iter + 1;
+        let k_last = state.k_sol;
+
+        state.dw = compute_w_and_derivatives(state.k_sol, n_is_zero, two_pi_n, 3);
+        state.w = state.dw[0];
+
+        let (func, dfunc) = compute_tof_function(&state, &geom);
+        residual = func.abs();
+
+        if residual < 1e-14 * geom.tof_by_s.max(1.0) {
+            break;
+        }
+
+        let dk = compute_correction(func, &dfunc, n_is_zero);
+        let mut k_new = state.k_sol + dk;
+
+        if k_new < k_left {
+            k_new = 0.5 * (k_last + k_left);
+        } else if k_new > k_right {
+            k_new = 0.5 * (k_last + k_right);
+        }
+
+        state.k_sol = k_new;
+        state.update_p(geom.tau);
+
+        if (state.k_sol - k_last).abs() < f64::EPSILON * state.k_sol.abs().max(1.0) {
+            break;
+        }
+    }
+
+    if state.iterations >= MAX_ITERATIONS && residual > 1e-10 {
+        return Err(LambertError::ConvergenceFailed {
+            iterations: state.iterations,
+            residual,
+        });
+    }
+
+    let (v1, v2) = compute_velocities(&state, &geom);
+
+    let warning = match geom.n_pi_rev_info {
+        NpiRevInfo::NearHalfRev => Some("Near half-revolution transfer - velocity accuracy may be degraded".to_string()),
+        NpiRevInfo::NearFullRev => Some("Near full-revolution transfer - close to degenerate case".to_string()),
+        _ => None,
+    };
+
+    let sens = LambertSensitivities::compute_with_hessians(&state, &geom);
+
+    let solution = LambertSolution {
+        v1,
+        v2,
+        n_rev,
+        iterations: state.iterations,
+        residual,
+        k: state.k_sol,
+        warning,
+    };
+
+    Ok((solution, sens))
+}
+
 /// Compute initial guess for k based on problem parameters.
 ///
 /// When the `lightweight` feature is NOT enabled (default), this uses interpolation

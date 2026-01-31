@@ -64,7 +64,74 @@
 
 ---
 
+## Phase 4: Second-Order Sensitivities (Hessians)
+
+### 4.1 Implement `compute_with_hessians()` in `sensitivities.rs`
+- [x] Refactor: extract shared first-order intermediates into helper struct
+- [x] Implement `compute_second_order_geometry` (d2tau, d2s)
+- [x] Implement `compute_second_order_f_partials` (d2F/dk2, d2F/dkdy, d2F/dy2)
+- [x] Implement `compute_second_order_ift` (d2k/dy2)
+- [x] Implement `compute_second_order_velocity` (d2z/dk2, d2z/dkdy, d2z/dy2)
+- [x] Assembly: fill in `compute_with_hessians()` using all helper functions
+- [x] `cargo test` passes
+
+**DO NOT modify:** `geometry.rs`, `solver.rs`, `velocity.rs`, `stumpff.rs`, `compute_first_order()`
+
+### 4.2 Add `solve_lambert_with_hessian` API
+- [x] Add `solve_lambert_with_hessian()` to `solver.rs`
+- [x] Export from `lib.rs`
+- [x] `cargo test` passes
+
+**DO NOT modify:** `solve_lambert()`, `solve_lambert_with_jacobian()`
+
+### 4.3 Extend Fortran FFI for second-order validation
+- [x] Add `IvlamHessianResult` struct and `ivlam_with_hessians()` to `tests/common/ivlam_ffi.rs`
+
+**DO NOT modify:** `ivlam_c_wrapper.f90`, Fortran build
+
+### 4.4 Validation tests
+- [x] Create `tests/hessian_validation.rs`
+- [x] Finite-difference Hessians (central difference of Jacobians)
+- [x] Symmetry check (H[j][l] == H[l][j])
+- [x] Fortran FFI comparison (feature-gated `ivlam-ffi`)
+- [x] Full test suite passes
+
+### 4.5 Bug fixes in Hessian computation
+- [x] Fix Bug #1: `d2_tof_by_s` parenthesization error (line 784)
+- [x] Fix Bug #2: `d2sqrtp_jl` sign error (line 1122)
+- [x] Remove debug instrumentation and test files
+- [x] All 85 tests pass, clippy clean
+
+---
+
 ## Review
+
+### Phase 4.5 Summary — Hessian Bug Fixes
+
+**Two bugs** in `compute_with_hessians()` in `src/sensitivities.rs` caused 24 of 294 Hessian elements to fail FD validation. Symmetry tests passed because both bugs produced symmetric errors.
+
+**Bug #1 — `d2_tof_by_s` parenthesization (line 784):**
+The formula `d²(T/S)/dy²` had incorrect operator precedence. The `*inv_s` was applied to the entire parenthesized expression instead of just the `d2s[j][l]` term:
+- Wrong: `tof_by_s * (2.0 * ds[j] * ds[l] * inv_s_sq - d2s[j][l]) * inv_s`
+- Correct: `tof_by_s * (2.0 * ds[j] * ds[l] * inv_s_sq - d2s[j][l] * inv_s)`
+This caused ±0.695 errors in 16 elements where both j,l correspond to non-zero unit vector components.
+
+**Bug #2 — `d2sqrtp_jl` sign error (line 1122):**
+The second derivative `d²(√p)/dy_j·dy_l` had a sign error in the second term. The chain rule for `d/dy_l[−k·dτ_j/(2√p)]` produces a negative sign via `d(1/√p)/dy = −dp/(2p√p)`, but the code had a positive sign:
+- Wrong: `−k·d²τ/(2√p) + k²·dτ_j·dτ_l/(4p√p)`
+- Correct: `−k·d²τ/(2√p) − k²·dτ_j·dτ_l/(4p√p)`
+This caused ±0.125 errors in the remaining 8 elements.
+
+**Debugging approach:** Term-by-term decomposition of the 5-part Hessian assembly formula, with FD validation of each intermediate quantity (d2_tof_by_s, d2f_dydy, d2k_dy, d2g_lag, d2sqrtp).
+
+**Cleanup:** Removed all temporary debug `eprintln!` statements from `compute_with_hessians()`, removed the internal `debug_fd_explicit_d2z` test, and deleted `tests/hessian_debug.rs` and `tests/hessian_term_debug.rs`.
+
+**Validation:** All 12 hessian_validation tests pass (6 FD + 6 symmetry), 85 total tests pass, clippy clean.
+
+**User testing needed:**
+- `DYLD_LIBRARY_PATH=fortran cargo test --features ivlam-ffi` — Fortran ivLam Hessian cross-validation
+
+---
 
 ### Phase 3 Summary
 

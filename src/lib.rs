@@ -60,5 +60,5 @@ mod interpolation;
 
 pub use geometry::Direction;
 pub use solver::{solve_lambert, solve_lambert_multi_rev, solve_lambert_with_jacobian,
-                 LambertSolution, LambertError};
+                 solve_lambert_with_hessian, LambertSolution, LambertError};
 pub use sensitivities::LambertSensitivities;

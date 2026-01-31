@@ -162,3 +162,72 @@ pub fn ivlam_with_derivs(
 pub fn ivlam_jacobian(result: &IvlamDerivResult) -> &[[f64; 7]; 6] {
     &result.jacobian
 }
+
+/// Result from ivLam with first and second-order derivatives.
+#[derive(Debug, Clone)]
+pub struct IvlamHessianResult {
+    pub v1: [f64; 3],
+    pub v2: [f64; 3],
+    pub info: i32,
+    pub halfrev: i32,
+    pub jacobian: [[f64; 7]; 6],
+    /// Hessians: hessians[i][j][l] = ∂²z_i/∂y_j∂y_l
+    pub hessians: [[[f64; 7]; 7]; 6],
+}
+
+/// Solve Lambert with first and second-order derivatives using ivLam (mu=1).
+pub fn ivlam_with_hessians(
+    r1: &[f64; 3],
+    r2: &[f64; 3],
+    tof: f64,
+    direction: i32,
+    ntilde: i32,
+) -> IvlamHessianResult {
+    ensure_initialized();
+    let _lock = FORTRAN_LOCK.lock().unwrap();
+
+    let mut v1 = [0.0_f64; 3];
+    let mut v2 = [0.0_f64; 3];
+    let mut info: c_int = 0;
+    let mut halfrev: c_int = 0;
+    let mut jacobian = [[0.0_f64; 7]; 6];
+    let mut d2zdy_t = [0.0_f64; 294]; // 7*7*6 = 294
+
+    unsafe {
+        ivlam_ntilde_with_derivs_c(
+            r1.as_ptr(),
+            r2.as_ptr(),
+            &tof,
+            direction as c_int,
+            ntilde as c_int,
+            v1.as_mut_ptr(),
+            v2.as_mut_ptr(),
+            &mut info,
+            &mut halfrev,
+            1, // include second-order
+            jacobian.as_mut_ptr() as *mut f64,
+            d2zdy_t.as_mut_ptr(),
+        );
+    }
+
+    // Unpack d2zdy_t from Fortran column-major d2zdyT(7,7,6).
+    // Fortran layout: d2zdyT(j+1, l+1, i+1) at flat index i*49 + l*7 + j (0-indexed).
+    // Our convention: hessians[i][j][l] = ∂²z_i/∂y_j∂y_l
+    let mut hessians = [[[0.0_f64; 7]; 7]; 6];
+    for i in 0..6 {
+        for j in 0..7 {
+            for l in 0..7 {
+                hessians[i][j][l] = d2zdy_t[i * 49 + l * 7 + j];
+            }
+        }
+    }
+
+    IvlamHessianResult {
+        v1,
+        v2,
+        info: info as i32,
+        halfrev: halfrev as i32,
+        jacobian,
+        hessians,
+    }
+}
