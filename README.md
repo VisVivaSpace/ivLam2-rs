@@ -10,7 +10,7 @@ The implementation uses the **vercosine formulation** which:
 - Is singularity-free except for the true singularity (r₁ = r₂)
 - Handles all conic types (elliptic, parabolic, hyperbolic) with a single unified equation
 - Supports multi-revolution transfers (N complete orbits)
-- Includes analytical first-order sensitivities (Jacobian ∂[v₁,v₂]/∂[r₁,r₂,T])
+- Includes analytical first- and second-order sensitivities (Jacobian and Hessian)
 
 ## References
 
@@ -25,6 +25,14 @@ The implementation uses the **vercosine formulation** which:
 3. Arora, N., Russell, R. P., Strange, N., and Ottesen, D., **"Partial Derivatives
    of the Solution to the Lambert Boundary Value Problem,"** Journal of
    Guidance, Control, and Dynamics, Vol. 38, No. 9, 2015, pp. 1563–1572.
+
+## Documentation
+
+Detailed mathematical documentation is available in the [`docs/`](docs/) directory:
+
+- **[Algorithm Description](docs/algorithm.md)** — Complete walkthrough of the vercosine Lambert solver with LaTeX equations
+- **[Sensitivities](docs/sensitivities.md)** — First-order (Jacobian) and second-order (Hessian) sensitivity derivations
+- **[LLM Context](docs/llm-context.md)** — Compact technical reference for AI assistants
 
 ## Usage
 
@@ -107,6 +115,21 @@ let dv1_dr1 = sens.dv1_dr1();   // 3×3 matrix
 let dv1_dtof = sens.dv1_dtof();  // 3-vector
 let full_jac = &sens.jacobian;   // 6×7 [[f64; 7]; 6]
 ```
+
+#### `solve_lambert_with_hessian`
+
+```rust
+pub fn solve_lambert_with_hessian(
+    r1: &[f64; 3],
+    r2: &[f64; 3],
+    tof: f64,
+    mu: f64,
+    direction: Direction,
+    n_rev: i32,
+) -> Result<(LambertSolution, LambertSensitivities), LambertError>
+```
+
+Solves Lambert's problem and computes both the 6×7 Jacobian and the 6×7×7 Hessian (second-order sensitivities d²[v₁,v₂]/d[r₁,r₂,T]²). The Hessian is stored in `sens.hessians` as `Option<[[[f64; 7]; 7]; 6]>`.
 
 #### `solve_lambert_multi_rev`
 
@@ -219,11 +242,7 @@ The minimum time of flight for N revolutions can be computed from the geometry.
 
 ### Known Limitations
 
-1. **Initial guess**: Uses simple analytical approximations. The interpolation tables
-   from the original ivLam2 coefficient file would provide better initial guesses.
-
-2. **Second-order sensitivities**: Only first-order Jacobian is implemented. The
-   second-order Hessians (d²z/dy²) are not yet available.
+Half-revolution transfers (θ = π exactly) are a true singularity — the transfer plane is undefined, and the solver returns `HalfRevolutionSingularity`.
 
 ## License
 

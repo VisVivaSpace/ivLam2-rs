@@ -104,6 +104,33 @@
 
 ---
 
+## Phase 5: Create `docs/` Directory with Algorithm Documentation
+
+### 5.1 Create `docs/algorithm.md`
+- [x] Detailed algorithm walkthrough with LaTeX math blocks
+- [x] Covers: problem statement, vercosine formulation, W function, root-finding, velocity recovery, interpolation, multi-rev
+
+### 5.2 Create `docs/sensitivities.md`
+- [x] First- and second-order sensitivity derivations
+- [x] Generic IFT framework, application to Lambert's problem, Jacobian/Hessian layout
+
+### 5.3 Create `docs/llm-context.md`
+- [x] Compact technical reference for LLMs
+- [x] Architecture, key variables, equation reference, code mapping, pitfalls
+
+### 5.4 Update `README.md`
+- [x] Add "Documentation" section with link to `docs/`
+- [x] Remove outdated "Known Limitations" (Hessians and interpolation are now implemented)
+- [x] Add `solve_lambert_with_hessian` to API section
+
+### 5.5 Update `src/lib.rs`
+- [x] Add doc comment pointing to `docs/` for algorithm details
+- [x] Mention Hessian API
+
+**DO NOT modify:** Any `.rs` files other than `src/lib.rs` doc comments, `notes/`, test files, `CLAUDE.md`
+
+---
+
 ## Review
 
 ### Phase 4.5 Summary — Hessian Bug Fixes

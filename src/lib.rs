@@ -1,7 +1,13 @@
 //! # Lambert Solver
 //!
 //! A Rust implementation of the vercosine Lambert solver based on the ivLam2 algorithm
-//! by Ryan P. Russell.
+//! by Ryan P. Russell. Supports all conic types, multi-revolution transfers, and
+//! analytical first-order (Jacobian) and second-order (Hessian) sensitivities.
+//!
+//! For detailed algorithm documentation with mathematical derivations, see the
+//! [`docs/`](https://github.com/ivansche/ivLam2-rs/tree/main/docs) directory:
+//! - [`docs/algorithm.md`](https://github.com/ivansche/ivLam2-rs/blob/main/docs/algorithm.md) — Algorithm walkthrough
+//! - [`docs/sensitivities.md`](https://github.com/ivansche/ivLam2-rs/blob/main/docs/sensitivities.md) — Sensitivity derivations
 //!
 //! ## References
 //!
