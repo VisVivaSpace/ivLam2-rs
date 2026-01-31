@@ -292,7 +292,7 @@ Half-revolution transfers (θ = π exactly) are a true singularity — the trans
 
 ## License
 
-GPL-3.0, following the original ivLam2 code.
+[GPL-3.0-only](LICENSE), following the original ivLam2 code.
 
 ## Acknowledgments
 
